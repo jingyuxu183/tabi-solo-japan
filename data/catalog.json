@@ -1,0 +1,58 @@
+{
+  "interests": {
+    "street": "街区散步",
+    "shopping": "购物・古着",
+    "food": "吃吃喝喝",
+    "nature": "自然风景",
+    "sea": "海边",
+    "coffee": "咖啡店",
+    "art": "艺术设计",
+    "culture": "寺社・文化",
+    "hike": "轻徒步"
+  },
+  "bases": {
+    "tokyo": {
+      "city": "东京",
+      "caption": "TOKYO & BEYOND",
+      "image": "tokyo.jpg",
+      "alt": "从高处俯瞰东京涩谷十字路口",
+      "headline": "大城市里，也有自己的小日常。",
+      "subline": "街区散步、公园发呆，也可以坐电车去看海。",
+      "credits": "东京涩谷照片：David Kernan，<a href=\"https://commons.wikimedia.org/wiki/File:Shibuya_Crossing,_Aerial.jpg\" target=\"_blank\" rel=\"noreferrer\">Wikimedia Commons</a>，<a href=\"https://creativecommons.org/licenses/by/4.0/\" target=\"_blank\" rel=\"noreferrer\">CC BY 4.0</a>。",
+      "places": [
+        {"id":"shimokita","name":"下北泽","roman":"SHIMOKITAZAWA","scope":"city","tags":["shopping","street","food"],"months":[],"season":"全年都适合街区闲逛","desc":"古着、唱片、书店和小剧场挤在低层街区里，适合从午后慢慢逛到晚上。","trade":"中午后更有活力；若不爱古着与街区闲逛，半天可能偏长。","time":"从新宿约 7 分钟","duration":"半天","highlights":["BONUS TRACK","下北泽一番街","古着与唱片店群"],"source":"https://www.gotokyo.org/en/destinations/western-tokyo/shimokitazawa/index.html"},
+        {"id":"kichijoji","name":"吉祥寺","roman":"KICHIJOJI","scope":"city","tags":["nature","street","food","shopping"],"months":[3,4,5,10,11],"season":"4 月樱花、11 月红叶更有季节感","desc":"井之头公园、生活型商店街和横丁小店连在一起，很像东京居民的周末。","trade":"赏樱与红叶季人多；吉卜力美术馆需提前预约。","time":"从新宿约 14 分钟","duration":"半天至一天","highlights":["井之头恩赐公园","口琴横丁","吉祥寺商店街"],"source":"https://www.gotokyo.org/en/destinations/western-tokyo/kichijoji/index.html"},
+        {"id":"yanaka","name":"谷中・根津","roman":"YANAKA · NEZU","scope":"city","tags":["street","culture","food"],"months":[3,4,10,11],"season":"春秋步行更舒服","desc":"在老街、寺社和小店之间走一下午，看到东京较慢、较生活化的一面。","trade":"亮点分散、以步行为主；期待大型地标可能会觉得平淡。","time":"从上野一带步行可达","duration":"半天","highlights":["谷中银座","根津神社","千驮木街巷"],"source":"https://www.gotokyo.org/en/destinations/northern-tokyo/yanaka-and-nezu/index.html"},
+        {"id":"kiyosumi","name":"清澄白河","roman":"KIYOSUMI-SHIRAKAWA","scope":"city","tags":["coffee","art","street"],"months":[],"season":"室内外容易切换，全年可安排","desc":"仓库改造的咖啡馆、现代艺术和安静水岸，适合给密集行程降速。","trade":"店铺相对分散，部分场馆休馆日不同，需要提前确认。","time":"从东京站一带约 20 分钟","duration":"半天","highlights":["清澄庭园","东京都现代美术馆","咖啡烘焙店群"],"source":"https://www.gotokyo.org/en/destinations/eastern-tokyo/kiyosumi-shirakawa/index.html"},
+        {"id":"kagurazaka","name":"神乐坂・饭田桥","roman":"KAGURAZAKA","scope":"city","tags":["street","food","culture","coffee"],"months":[3,4,10,11],"season":"春秋适合在坡道和小巷之间慢慢走","desc":"石板小巷、法式小店与老东京气质并存，适合傍晚散步和独自吃饭。","trade":"主街不长，最好和饭田桥、外濠或书店组合。","time":"从新宿约 15 分钟","duration":"半天","highlights":["神乐坂通","毘沙门天善国寺","赤城神社"],"source":"https://www.gotokyo.org/en/destinations/central-tokyo/kagurazaka/index.html"},
+        {"id":"koenji","name":"高圆寺","roman":"KOENJI","scope":"city","tags":["shopping","street","food","culture"],"months":[],"season":"全年可逛，周末和傍晚更有气氛","desc":"古着、现场音乐、小酒馆和商店街形成更松弛的东京青年文化。","trade":"店铺开门偏晚；若更偏好精致购物，可能不如代官山。","time":"从新宿约 10 分钟","duration":"半天","highlights":["PAL 商店街","纯情商店街","古着与 Live House"],"source":"https://www.gotokyo.org/en/destinations/western-tokyo/koenji/index.html"},
+        {"id":"nakameguro","name":"中目黑・代官山","roman":"NAKAMEGURO · DAIKANYAMA","scope":"city","tags":["street","coffee","shopping","art"],"months":[3,4,10,11],"season":"樱花季最突出，春秋也适合步行","desc":"目黑川、设计书店、咖啡馆和精品店可以连成一条轻松城市路线。","trade":"樱花季极度拥挤；消费水平通常高于普通街区。","time":"从涩谷约 5 分钟","duration":"半天","highlights":["目黑川","代官山 T-SITE","旧山手通"],"source":"https://www.gotokyo.org/en/destinations/southern-tokyo/daikanyama/index.html"},
+        {"id":"jiyugaoka","name":"自由之丘","roman":"JIYUGAOKA","scope":"city","tags":["coffee","shopping","street","food"],"months":[3,4,10,11],"season":"春秋适合逛小店和露台","desc":"甜品、杂货、生活方式店和安静住宅街组成轻松半日，游客密度通常不高。","trade":"缺少强地标，更适合喜欢生活感和逛店的人。","time":"从涩谷约 10 分钟","duration":"半天","highlights":["九品佛川绿道","La Vita","生活杂货店群"],"source":"https://www.gotokyo.org/en/destinations/southern-tokyo/jiyugaoka/index.html"},
+        {"id":"asakusa","name":"浅草・合羽桥","roman":"ASAKUSA · KAPPABASHI","scope":"city","tags":["culture","street","food","shopping"],"months":[],"season":"全年可安排，早晨更从容","desc":"经典寺社、老东京街区与厨具商店街可以组合，兼顾第一次东京和深度闲逛。","trade":"雷门周边长期拥挤；想看生活感应尽早出发并离开主轴。","time":"从上野约 5 分钟","duration":"半天至一天","highlights":["浅草寺","合羽桥道具街","隅田公园"],"source":"https://www.gotokyo.org/en/destinations/eastern-tokyo/asakusa/index.html"},
+        {"id":"ueno","name":"上野・御徒町","roman":"UENO · OKACHIMACHI","scope":"city","tags":["culture","art","food","shopping"],"months":[3,4,10,11],"season":"春季赏樱突出，雨天也有大量室内选择","desc":"博物馆、公园、市场和铁路沿线小店密集，能按体力灵活增减。","trade":"公园与博物馆容易排得过满；阿美横町氛围较嘈杂。","time":"从东京站约 8 分钟","duration":"半天至一天","highlights":["上野恩赐公园","东京国立博物馆","阿美横町"],"source":"https://www.gotokyo.org/en/destinations/northern-tokyo/ueno/index.html"},
+        {"id":"ginza","name":"银座・丸之内","roman":"GINZA · MARUNOUCHI","scope":"city","tags":["shopping","art","coffee","street"],"months":[],"season":"全年可安排，冬季灯饰较突出","desc":"百货、建筑、画廊和东京站周边连成成熟城市路线，适合购物与设计兴趣。","trade":"消费偏高，周末银座主街人多；生活感弱于西侧街区。","time":"东京站周边即可开始","duration":"半天","highlights":["东京站丸之内","银座中央通","KITTE 屋顶花园"],"source":"https://www.gotokyo.org/en/destinations/central-tokyo/ginza/index.html"},
+        {"id":"hongo","name":"本乡・小石川","roman":"HONGO · KOISHIKAWA","scope":"city","tags":["culture","street","nature","coffee"],"months":[2,3,4,10,11],"season":"梅花、樱花和秋色时更有层次","desc":"大学校园、旧书店、庭园和坡道构成安静文教路线，适合独自散步。","trade":"部分校园和设施可能限制参观；地点之间需要一定步行。","time":"从东京站约 15 分钟","duration":"半天","highlights":["东京大学本乡校区","小石川后乐园","本乡菊坂"],"source":"https://www.gotokyo.org/en/destinations/central-tokyo/tokyo-dome-and-around/index.html"},
+        {"id":"odaiba","name":"台场・丰洲","roman":"ODAIBA · TOYOSU","scope":"city","tags":["sea","art","shopping","street"],"months":[4,5,9,10,11],"season":"晴朗的春秋最适合水岸步行","desc":"东京湾景观、数字艺术、商场和开阔步道，适合安排现代东京的一整段。","trade":"商业设施比例高；各点距离较远，需要利用百合海鸥线。","time":"从新桥约 15 分钟","duration":"半天至一天","highlights":["台场海滨公园","丰洲市场","teamLab Planets 周边"],"source":"https://www.gotokyo.org/en/destinations/southern-tokyo/odaiba/index.html"},
+        {"id":"kamakura","name":"镰仓・江之岛","roman":"KAMAKURA · ENOSHIMA","scope":"near","tags":["sea","culture","street"],"months":[4,5,6,9,10,11],"season":"春秋适合步行，6 月有绣球花","desc":"寺社、老街和海岸可以放在同一天，也能只选一侧慢慢走。","trade":"热门时段拥挤；镰仓与江之岛都想看会变成走马观花。","time":"从东京约 1 小时","duration":"一天","highlights":["镰仓高校前沿线","长谷寺","江之岛海岸"],"source":"https://www.japan.travel/en/destinations/kanto/kanagawa/kamakura-and-around/"},
+        {"id":"takao","name":"高尾山","roman":"MT. TAKAO","scope":"near","tags":["nature","hike"],"months":[4,5,10,11],"season":"10–11 月适合徒步和看秋色","desc":"不用离东京很远就能上山，路线选择多，可在自然里过完整一天。","trade":"旺季拥挤；雨雪和天黑时间会明显影响体验。","time":"从新宿约 1 小时","duration":"半天至一天","highlights":["高尾山缆车","药王院","山顶步道"],"source":"https://www.gotokyo.org/en/destinations/outlying-area/mt-takao-and-around/index.html"},
+        {"id":"yokohama","name":"横滨・港未来","roman":"YOKOHAMA","scope":"near","tags":["sea","street","food","shopping"],"months":[4,5,9,10,11,12],"season":"春秋水岸舒适，冬季夜景和灯饰突出","desc":"港口、红砖仓库、中华街和现代城市景观兼容，全天路线成熟且交通简单。","trade":"景点跨度较大；中华街与港未来都深逛会比较赶。","time":"从涩谷约 30 分钟","duration":"一天","highlights":["港未来","红砖仓库","山下公园与中华街"],"source":"https://www.yokohamajapan.com/"},
+        {"id":"kawagoe","name":"川越","roman":"KAWAGOE","scope":"near","tags":["street","culture","food","shopping"],"months":[3,4,10,11],"season":"春秋适合老街步行","desc":"藏造老街、菓子屋横丁和寺社集中，适合从东京出发的低难度小城体验。","trade":"核心街区商业化明显；周末中午游客较多。","time":"从池袋约 30 分钟","duration":"半天至一天","highlights":["藏造一番街","时之钟","冰川神社"],"source":"https://www.koedo.or.jp/foreign/english/"},
+        {"id":"hakone","name":"箱根","roman":"HAKONE","scope":"near","tags":["nature","art","culture"],"months":[4,5,10,11,12],"season":"秋季红叶突出，冬季晴天更容易远眺富士山","desc":"山谷、湖泊、美术馆与温泉组成经典周边路线，可按兴趣选择环线的一部分。","trade":"交通链较长且受天气影响；一天完成完整环线会偏赶。","time":"从新宿约 90 分钟起","duration":"一天","highlights":["芦之湖","箱根雕刻之森美术馆","大涌谷"],"source":"https://www.hakonenavi.jp/international/en/"},
+        {"id":"nikko","name":"日光","roman":"NIKKO","scope":"near","tags":["culture","nature","hike"],"months":[4,5,10,11],"season":"10–11 月秋色突出，但不同海拔进度不同","desc":"世界遗产寺社与山地自然兼具，适合愿意早起的完整一日。","trade":"从东京往返时间较长；寺社区与奥日光不宜同日全部塞满。","time":"从浅草约 2 小时","duration":"一天","highlights":["日光东照宫","神桥","中禅寺湖方向"],"source":"https://www.visitnikko.jp/en/"},
+        {"id":"mitake","name":"御岳山・御岳溪谷","roman":"MT. MITAKE","scope":"near","tags":["nature","hike","culture"],"months":[4,5,9,10,11],"season":"春季新绿和秋季红叶最适合","desc":"溪谷、缆车、山上神社和轻徒步线路结合，比高尾山更有远离都市的感觉。","trade":"交通时间更长；步道与缆车状态需出发前确认。","time":"从新宿约 90 分钟起","duration":"一天","highlights":["御岳溪谷","御岳山缆车","武藏御岳神社"],"source":"https://www.gotokyo.org/en/destinations/outlying-area/okutama/index.html"},
+        {"id":"okutama","name":"奥多摩","roman":"OKUTAMA","scope":"near","tags":["nature","hike"],"months":[4,5,9,10,11],"season":"新绿和红叶季最突出","desc":"湖泊、溪谷和山林让东京基地也能安排真正的自然日，适合多次到访东京的人。","trade":"巴士班次和步道条件限制较多，不适合临时随意换点。","time":"从新宿约 2 小时","duration":"一天","highlights":["奥多摩湖","日原钟乳洞方向","多摩川沿线步道"],"source":"https://www.gotokyo.org/en/destinations/outlying-area/okutama/index.html"},
+        {"id":"chichibu","name":"秩父・长瀞","roman":"CHICHIBU · NAGATORO","scope":"near","tags":["nature","hike","culture"],"months":[4,5,10,11,12],"season":"春季花景、秋季红叶和冬季祭典各有重点","desc":"山地小城、溪谷与神社提供明显不同于东京市区的体验。","trade":"区域较分散，最好只选秩父或长瀞一条主线。","time":"从池袋约 80 分钟起","duration":"一天","highlights":["长瀞岩叠","秩父神社","秩父旧街区"],"source":"https://www.chichibu-omotenashi.com/en/"},
+        {"id":"sawara","name":"佐原","roman":"SAWARA","scope":"near","tags":["street","culture","food"],"months":[3,4,5,10,11],"season":"春秋水乡步行舒适","desc":"运河、木造町屋和老铺形成紧凑水乡路线，比川越更安静。","trade":"从东京耗时不短，非祭典日整体节奏很慢。","time":"从东京约 90 分钟起","duration":"一天","highlights":["小野川沿岸","伊能忠敬旧宅","香取神宫方向"],"source":"https://www.japan.travel/en/spot/1516/"},
+        {"id":"nokogiri","name":"锯山・金谷","roman":"MT. NOKOGIRI","scope":"near","tags":["nature","hike","sea","culture"],"months":[3,4,5,10,11],"season":"晴朗春秋适合登高看海","desc":"渡轮、山路、石刻与东京湾景观组合出有旅行感的一日路线。","trade":"风雨会影响缆车和渡轮；台阶较多，对体力有要求。","time":"从东京约 2 小时起","duration":"一天","highlights":["锯山缆车","日本寺","金谷港"],"source":"https://www.japan.travel/en/spot/1559/"},
+        {"id":"kawaguchiko","name":"河口湖","roman":"LAKE KAWAGUCHI","scope":"near","tags":["nature","hike","art"],"months":[3,4,5,10,11,12],"season":"春樱、秋叶和冬季晴天各有富士山景观","desc":"湖岸、富士山视野和美术馆适合构成以风景为主的一天。","trade":"能见度受天气影响很大；热门季节公路可能拥堵。","time":"从新宿约 2 小时","duration":"一天","highlights":["河口湖北岸","大石公园","音乐森林周边"],"source":"https://www.japan.travel/en/spot/1329/"},
+        {"id":"atami","name":"热海","roman":"ATAMI","scope":"near","tags":["sea","art","food","street"],"months":[1,2,3,4,10,11,12],"season":"冬末早樱、春秋海滨散步较有特色","desc":"海岸、坡城、温泉街和美术馆组合，适合想短暂离开大都市的人。","trade":"城市坡度较大；当天往返会弱化温泉住宿体验。","time":"从东京约 45–90 分钟","duration":"一天","highlights":["热海阳光海滩","MOA 美术馆","银座商店街"],"source":"https://www.ataminews.gr.jp/"}
+      ]
+    },
+    "osaka": {
+      "city": "大阪",
+      "caption": "OSAKA & BEYOND",
+      "image": "osaka.jpg",
+      "alt": "夜晚的大阪道顿堀运河和霓虹招牌",
+      "headline": "热闹之外，关西也能慢慢走。",
+      "subline": "市场、河岸和老街，也可以当天去古都或港口城市。",
+      "credits": "大阪道顿堀照片：Martin Falbisoner，<a href=\"https://commons.wikimedia.org/wiki/File:Dotonbori,_Osaka,_at_night,_November_2016.jpg\" target=\"_blank\
