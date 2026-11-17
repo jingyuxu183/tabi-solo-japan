@@ -5,6 +5,7 @@
 - 在线版本：https://tabi-memo.shao-tabi.workers.dev （Cloudflare Workers，账号是 Shao 自己的）
 - 代码仓库：https://github.com/jingyuxu183/tabi-solo-japan ，`main` 是最新代码，也是今后的唯一来源
 - 面向外部读者的介绍在 `README.md`；这份文件是给接手开发的人或 AI 看的
+- 每个重要决定的来由（当时的情况、考虑过的方案、为什么这样选）在 `docs/DECISIONS.md`。做新功能或想推翻某个设计之前，先在那里找相关的决定
 
 ## 一、产品现在是什么
 
@@ -104,6 +105,7 @@ Shao 已明确不做的：真实路程与时间、地图服务、营业时间与
 | `worker/runtime.js` | 服务端。`generateTrip`（/api/plan）、`discoverPlaces`（/api/discover）、`collectMemo`（/api/collect）、`locateMemo`（/api/locate）、`arrangeMemo`（/api/arrange） |
 | `data/catalog.json` | 参考路线页的基础地点库，东京和大阪各 26 个 |
 | `scripts/` | 构建、测试、评测、本地服务 |
+| `docs/DECISIONS.md` | 开发决策记录：每个重要决定为什么这样做 |
 | `dist/server/index.js` | 构建产物，不要手改 |
 
 ## 七、运行与测试
