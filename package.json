@@ -1,0 +1,15 @@
+{
+  "name": "tabi-solo-japan",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate-artifact.mjs",
+    "test": "node scripts/test-ui-structure.mjs && node scripts/test-backend.mjs && node scripts/build.mjs && node scripts/test-guards.mjs",
+    "dev": "node scripts/build.mjs && node scripts/dev-server.mjs",
+    "eval": "node scripts/build.mjs && node scripts/eval-discovery.mjs",
+    "eval:memo": "node scripts/build.mjs && node scripts/eval-memo.mjs",
+    "eval:arrange": "node scripts/build.mjs && node scripts/eval-arrange.mjs 3",
+    "deploy": "node scripts/build.mjs && npx wrangler deploy"
+  }
+}
