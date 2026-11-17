@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ひとり TABI — 日本旅行备忘</title>
+<meta name="description" content="把想去的店和地方随手写下来，TABI 帮你拆成备忘，并查出它们各在日本的哪里。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2316252b'/%3E%3Ccircle cx='22' cy='10' r='5' fill='%23c8372d'/%3E%3Cpath d='M8 10v14h15M8 17h10' stroke='white' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="home.css">
+<script src="memo-shared.js" defer></script><script src="memo-example.js" defer></script><script src="home.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="./" aria-label="TABI 首页"><span class="brand-mark" aria-hidden="true">ひ</span><span class="brand-name">TABI</span><span class="brand-sub">ひとり旅</span></a>
+</header>
+<main class="layout">
+  <section class="compose" aria-labelledby="compose-title">
+    <h1 id="compose-title">想去的地方，<br>随手写在这里。</h1>
+    <p class="lede">店名、地名，想到什么写什么，可以带上日期和一句特点。TABI 会把它拆成一条条备忘，再查出每个地方在日本的哪里。</p>
+    <form id="compose-form">
+      <label class="sr" for="memo-input">想去的地方</label>
+      <textarea id="memo-input" rows="7" maxlength="1200" spellcheck="false" placeholder="11/20 Fuglen 咖啡 澳白好喝&#10;一兰拉面&#10;周六 镰仓 想看海"></textarea>
+      <div class="compose-actions">
+        <button class="primary" id="collect" type="submit">整理进备忘</button>
+        <button class="plain" id="fill-sample" type="button">填入示例</button>
+        <span class="count" id="char-count" aria-hidden="true"></span>
+      </div>
+      <p class="status" id="compose-status" role="status" aria-live="polite"></p>
+    </form>
+    <p class="fineprint">写下的文字会发给模型和搜索服务用于整理。备忘只保存在这台设备的浏览器里。</p>
+  </section>
+
+  <section class="memo" aria-labelledby="memo-title">
+    <div class="memo-head">
+      <div>
+        <h2 id="memo-title">我的备忘</h2>
+        <p class="memo-summary" id="memo-summary"></p>
+      </div>
+      <div class="memo-tools">
+        <div class="switch" role="group" aria-label="排列方式">
+          <button type="button" data-view="date" aria-pressed="true">按日期</button>
+          <button type="button" data-view="area" aria-pressed="false">按区域</button>
+          <button type="button" data-view="today" id="today-tab" aria-pressed="false" hidden>今天</button>
+        </div>
+        <button class="plain" id="copy-text" type="button">复制成文字</button>
+        <button class="plain" id="clear-all" type="button">清空</button>
+      </div>
+    </div>
+    <div class="tripbar" id="tripbar" hidden>
+      <span class="tripbar-label">行程</span>
+      <button class="trip-summary" id="trip-edit" type="button"></button>
+      <button class="primary small" id="arrange" type="button">帮我排一下</button>
+    </div>
+    <div class="undo-bar" id="undo-bar" hidden><span id="undo-text"></span><button class="linkish" id="undo" type="button">撤销</button></div>
+    <div id="memo-body"></div>
+    <section class="notes" id="notes-box" hidden aria-labelledby="notes-title">
+      <h3 id="notes-title">其他备忘</h3>
+      <ul id="notes-list"></ul>
+    </section>
+    <aside class="classic-entry">
+      <div>
+        <h3>还没想好去哪？从参考路线里挑</h3>
+        <p>按月份、天数和兴趣，让 AI 先排一条以东京或大阪为住宿地的路线。看中的地点可以单独记进备忘，也可以把整条路线一次导入。</p>
+      </div>
+      <a class="outline-link" href="classic.html">去看参考路线</a>
+    </aside>
+  </section>
+</main>
+
+<dialog id="edit-dialog" aria-labelledby="edit-title">
+  <form id="edit-form" method="dialog">
+    <h2 id="edit-title">修改这条备忘</h2>
+    <label for="edit-name">名称</label>
+    <input id="edit-name" maxlength="60" required>
+    <label for="edit-note">一句特点</label>
+    <input id="edit-note" maxlength="80" placeholder="比如：澳白好喝">
+    <label for="edit-city">在哪个城市或哪家分店</label>
+    <input id="edit-city" maxlength="30" placeholder="可不填。连锁店写上能查到具体哪一家，比如：涩谷">
+    <div class="field-row">
+      <div><label for="edit-date">哪一天</label><input id="edit-date" type="date"></div>
+      <div><label for="edit-slot">时段</label><select id="edit-slot"><option value="any">不限</option><option value="morning">上午</option><option value="afternoon">下午</option><option value="evening">晚上</option></select></div>
+    </div>
+    <p class="field-hint" id="edit-day-hint"></p>
+    <div class="dialog-actions">
+      <button class="primary" type="submit" value="save">保存</button>
+      <button class="plain" type="button" id="edit-clear-date">不排日期</button>
+      <button class="plain" type="button" data-close>取消</button>
+      <button class="danger" type="button" id="edit-delete">删除这条</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="trip-dialog" aria-labelledby="trip-title">
+  <form id="trip-form" method="dialog">
+    <h2 id="trip-title">这趟行程</h2>
+    <p class="field-hint">填了天数，就能把还没排日期的地点分到各天。出发日期可以先不填，会按“第几天”排。</p>
+    <div class="field-row">
+      <div><label for="trip-start">出发日期</label><input id="trip-start" type="date"></div>
+      <div><label for="trip-days">一共几天</label><input id="trip-days" type="number" min="1" max="14" inputmode="numeric" required placeholder="例如 5"></div>
+    </div>
+    <div class="field-row">
+      <div><label for="trip-arrive">第一天</label><select id="trip-arrive"><option value="morning">上午到</option><option value="afternoon">下午到</option><option value="evening">晚上到</option></select></div>
+      <div><label for="trip-leave">最后一天</label><select id="trip-leave"><option value="morning">上午走</option><option value="afternoon">下午走</option><option value="evening">晚上走</option></select></div>
+    </div>
+    <label for="trip-per-day">每天最多去几处</label>
+    <select id="trip-per-day"><option value="3">3 处，慢慢逛</option><option value="4">4 处，一般</option><option value="5">5 处，排满一点</option></select>
+    <div class="dialog-actions"><button class="primary" type="submit">保存</button><button class="plain" type="button" data-close>取消</button></div>
+  </form>
+</dialog>
+
+<dialog id="arrange-dialog" class="wide" aria-labelledby="arrange-title">
+  <h2 id="arrange-title">建议这样排</h2>
+  <p class="field-hint" id="arrange-source"></p>
+  <div id="arrange-content"></div>
+  <div class="dialog-actions"><button class="primary" type="button" id="arrange-confirm">就这样排</button><button class="plain" type="button" data-close>先不排</button></div>
+</dialog>
+
+<dialog id="day-dialog" aria-labelledby="day-title">
+  <form id="day-form" method="dialog">
+    <h2 id="day-title">排到哪一天？</h2>
+    <label for="day-input">日期</label>
+    <input id="day-input" type="date" required>
+    <div class="dialog-actions"><button class="primary" type="submit">排到这一天</button><button class="plain" type="button" data-close>取消</button></div>
+  </form>
+</dialog>
+
+<dialog id="clear-dialog" aria-labelledby="clear-title">
+  <h2 id="clear-title">清空整份备忘？</h2>
+  <p class="field-hint">所有地点和其他备忘都会从这台设备上删除，不能恢复。</p>
+  <div class="dialog-actions"><button class="primary" type="button" id="clear-confirm">清空</button><button class="plain" type="button" data-close>先留着</button></div>
+</dialog>
+
+<dialog id="source-dialog" aria-labelledby="source-title">
+  <h2 id="source-title"></h2>
+  <div id="source-content"></div>
+  <div class="dialog-actions"><button class="plain" type="button" data-close>关闭</button></div>
+</dialog>
+
+<dialog id="copy-dialog" aria-labelledby="copy-title">
+  <h2 id="copy-title">复制这段文字</h2>
+  <p class="field-hint">浏览器没有允许自动复制，可以手动全选复制。</p>
+  <textarea id="copy-area" rows="12" readonly></textarea>
+  <div class="dialog-actions"><button class="plain" type="button" data-close>关闭</button></div>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

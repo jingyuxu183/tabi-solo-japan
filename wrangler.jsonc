@@ -1,0 +1,19 @@
+{
+  // TABI 部署到 Cloudflare Workers 的配置。部署：npm run deploy
+  "name": "tabi-memo",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-11-16",
+  // 每次部署前先重新打包
+  "build": { "command": "node scripts/build.mjs" },
+  // 页面、样式、图片由 Cloudflare 直接提供；只有 /api/* 会运行 Worker
+  "assets": { "directory": "./dist/public" },
+  // 位置缓存与每日联网额度计数。不写 id：第一次部署时自动创建
+  "kv_namespaces": [{ "binding": "TABI_KV" }],
+  // 每个 IP 每分钟最多 20 次接口请求
+  "ratelimits": [{ "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
+  // 所有访客每天合计最多联网搜索多少次。30 次/天约等于每月 900 次，对应 Tavily 免费额度；升级套餐后可调大
+  "vars": { "DAILY_SEARCH_LIMIT": "30" },
+  // 这两个密钥用 wrangler secret put 设置，不写在这里
+  "secrets": { "required": ["DEEPSEEK_API_KEY", "TAVILY_API_KEY"] },
+  "observability": { "enabled": true }
+}
