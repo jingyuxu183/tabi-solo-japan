@@ -477,7 +477,7 @@ async function locate(ids) {
       for (const item of batch) if (item.status === "pending") item.status = "unverified";
     } catch (error) {
       for (const item of batch) if (item.status === "pending") item.status = "failed";
-      if (error.code === "SEARCH_BUDGET") locate.budgetMessage = error.message;
+      if (error.code === "SEARCH_BUDGET" || error.code === "AI_BUDGET") locate.budgetMessage = error.message;
     }
     update();
   }));

@@ -135,12 +135,15 @@ function validateInput(value, allowedIds) {
 async function generateTrip(request, env) {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
   if (!env.DEEPSEEK_API_KEY) return json({ error: "AI 服务尚未配置" }, 503);
+  // 参考路线每次都调用模型，原来没有任何限流；页面在失败时会改用本地规则排路线。
+  if (await overLimit(request, env, "plan", 4)) return json({ error: "请求过于频繁，请稍后再试" }, 429);
   let input;
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
   const discoveredCandidates = normalizePlannerDiscovered(input.discovered, input.base);
   const allowedIds = new Set([...(PLACE_IDS[input.base] || []), ...discoveredCandidates.map((place) => place.id)]);
   const validationError = validateInput(input, allowedIds);
   if (validationError) return json({ error: validationError }, 400);
+  if (!(await spendAiCalls(env, 1))) return json(AI_BUDGET_ERROR, 429);
 
   const mode = input.mode === "classic" ? "classic" : "custom";
   const modeInstruction = mode === "classic"
@@ -330,9 +333,11 @@ function validateDiscoveryInput(value) {
   return null;
 }
 
-// ---------- 公开部署用的三道保护：限流、每日联网额度、位置缓存 ----------
+// ---------- 公开部署用的保护：限流、每日联网额度、每日 AI 次数、位置缓存 ----------
 // 这些都依赖 Cloudflare 的绑定（API_LIMITER、TABI_KV）；本地运行没有绑定时自动跳过，行为与之前一致。
-const DEFAULT_DAILY_SEARCHES = 120;
+// 默认值与线上配置一致：漏配变量时也不会比线上宽。
+const DEFAULT_DAILY_SEARCHES = 30;
+const DEFAULT_DAILY_AI_CALLS = 100;
 const LOCATE_CACHE_DAYS = 30;
 
 // 限流：先用进程内计数（本地也生效），再用 Cloudflare 的限流绑定（跨实例生效）。
@@ -345,19 +350,32 @@ async function overLimit(request, env, bucket, limit) {
   } catch (error) { console.error("Rate limiter unavailable", error); return false; }
 }
 
-// 每日联网额度：所有访客共用一个上限，保护搜索服务的月额度不被刷光。
-// KV 是最终一致的，计数会略有偏差，作为“大致不超过”的保险足够。
-async function spendSearches(env, count) {
+// 每日额度：所有访客共用一个上限。kind 是计数的种类（searches 联网搜索、ai 模型请求）。
+// KV 是最终一致的，计数会略有偏差，作为“大致不超过”的保险足够。真正的硬上限是两个服务各自的余额：
+// Tavily 没开超额付费，DeepSeek 是预付费。
+// check 为 true 时只看还够不够，不扣：用在“先确认有余量、再决定要不要调用模型”的地方。
+async function spendDaily(env, kind, count, rawLimit, fallback, { check = false } = {}) {
   if (!env?.TABI_KV || count <= 0) return true;
-  const limit = Number(env.DAILY_SEARCH_LIMIT) > 0 ? Number(env.DAILY_SEARCH_LIMIT) : DEFAULT_DAILY_SEARCHES;
-  const key = `searches:${new Date().toISOString().slice(0, 10)}`;
+  const limit = Number(rawLimit) > 0 ? Number(rawLimit) : fallback;
+  const key = `${kind}:${new Date().toISOString().slice(0, 10)}`;
   try {
     const used = Number(await env.TABI_KV.get(key)) || 0;
     if (used + count > limit) return false;
-    await env.TABI_KV.put(key, String(used + count), { expirationTtl: 3 * 86400 });
+    if (!check) await env.TABI_KV.put(key, String(used + count), { expirationTtl: 3 * 86400 });
     return true;
-  } catch (error) { console.error("Search budget unavailable", error); return true; }
+  } catch (error) { console.error(`Daily ${kind} budget unavailable`, error); return true; }
 }
+
+// 每日联网额度：保护搜索服务的月额度不被刷光。
+function spendSearches(env, count, options) {
+  return spendDaily(env, "searches", count, env?.DAILY_SEARCH_LIMIT, DEFAULT_DAILY_SEARCHES, options);
+}
+
+// 每日 AI 次数：保护模型服务的预付费余额。用完后各功能退回不依赖模型的规则版。
+function spendAiCalls(env, count) {
+  return spendDaily(env, "ai", count, env?.DAILY_AI_LIMIT, DEFAULT_DAILY_AI_CALLS);
+}
+const AI_BUDGET_ERROR = { error: "今天的 AI 使用次数用完了，请明天再试。", code: "AI_BUDGET" };
 
 // 位置缓存：同一个“名称 + 城市”查过一次就记住，别人或自己再写到时不再联网。
 function locateCacheKey(item) {
@@ -871,6 +889,10 @@ async function discoverPlaces(request, env) {
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
   const validationError = validateDiscoveryInput(input);
   if (validationError) return json({ error: validationError }, 400);
+  // 先确认搜索额度还够一次完整的寻找（最多 3 条搜索词 + 2 次补充搜索），不够就不再调用模型做规划。
+  if (!(await spendSearches(env, 5, { check: true }))) return json({ error: "今天的联网查询次数用完了，请明天再试。", code: "SEARCH_BUDGET" }, 429);
+  // 一次寻找最多调用 3 次模型：理解需求、整理结果、结果不足时再整理一次。
+  if (!(await spendAiCalls(env, 3))) return json(AI_BUDGET_ERROR, 429);
   let planned;
   try { planned = await planDiscovery(input, env); }
   catch (error) {
@@ -1078,6 +1100,8 @@ async function collectMemo(request, env) {
   if (!text) return json({ error: "先写下想去的地方" }, 400);
   if (text.length > 1200) return json({ error: "一次最多整理 1200 个字，可以分几次贴" }, 400);
   const today = memoParseIso(input?.today) ? input.today : memoIso(new Date());
+  // 用完后页面会改用本地规则按行拆分。
+  if (!(await spendAiCalls(env, 1))) return json(AI_BUDGET_ERROR, 429);
   const system = `你是日本旅行备忘录的整理助手。用户会贴一段随手写的文字，里面是想去的店和地方，可能带日期、时段和一句特点。你只做拆分和归类，不推荐、不新增、不改写。
 
 规则：
@@ -1160,6 +1184,10 @@ async function locateMemo(request, env) {
   const items = allItems.filter((item) => !cachedById.has(item.id));
   const merge = (fresh) => allItems.map((item) => cachedById.get(item.id) || fresh.get(item.id));
   if (!items.length) return json({ results: merge(new Map()), sourceCount: 0, cachedCount: cachedById.size });
+  // 先扣 AI 次数再扣搜索：AI 次数不够时不应白白用掉搜索额度。
+  if (!(await spendAiCalls(env, 1))) {
+    return json({ ...AI_BUDGET_ERROR, error: "今天的 AI 使用次数用完了，位置明天再查；地点已经记下，不影响排日期。", results: [...cachedById.values()] }, 429);
+  }
   if (!(await spendSearches(env, items.length))) {
     return json({ error: "今天的联网查询次数用完了，位置明天再查；地点已经记下，不影响排日期。", code: "SEARCH_BUDGET", results: [...cachedById.values()] }, 429);
   }
@@ -1305,8 +1333,8 @@ async function arrangeMemo(request, env) {
   const items = normalizeArrangeItems(input.items, trip);
   const rules = memoArrangeRules(items, days);
   const movable = items.filter((item) => !item.dayKey && item.status === "located");
-  // 没有可排的条目、或没配置模型时，直接用规则版。
-  if (!movable.length || !env.DEEPSEEK_API_KEY) return json({ ...rules, source: "rules", days, usage: null });
+  // 没有可排的条目、没配置模型、或今天的 AI 次数用完时，直接用规则版。
+  if (!movable.length || !env.DEEPSEEK_API_KEY || !(await spendAiCalls(env, 1))) return json({ ...rules, source: "rules", days, usage: null });
 
   const where = (item) => [item.prefecture, item.city, item.area].filter(Boolean).join(" ");
   const user = {

@@ -17,6 +17,7 @@ const env = {
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || "",
   TAVILY_API_KEY: process.env.TAVILY_API_KEY || "",
   DAILY_SEARCH_LIMIT: process.env.DAILY_SEARCH_LIMIT || "",
+  DAILY_AI_LIMIT: process.env.DAILY_AI_LIMIT || "",
   TABI_KV,
 };
 

@@ -11,8 +11,10 @@
   "kv_namespaces": [{ "binding": "TABI_KV" }],
   // 每个 IP 每分钟最多 20 次接口请求
   "ratelimits": [{ "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
-  // 所有访客每天合计最多联网搜索多少次。30 次/天约等于每月 900 次，对应 Tavily 免费额度；升级套餐后可调大
-  "vars": { "DAILY_SEARCH_LIMIT": "30" },
+  // DAILY_SEARCH_LIMIT：所有访客每天合计最多联网搜索多少次。平时 30 次/天约等于每月 900 次，对应 Tavily 免费额度；
+  //   2026 年 11 月的额度在开发测试中已用掉八成以上，暂时降到 10，Tavily 额度重置后改回 30。
+  // DAILY_AI_LIMIT：所有访客每天合计最多调用模型多少次。用完后各功能退回规则版，保护 DeepSeek 的预付费余额。
+  "vars": { "DAILY_SEARCH_LIMIT": "10", "DAILY_AI_LIMIT": "100" },
   // 这两个密钥用 wrangler secret put 设置，不写在这里
   "secrets": { "required": ["DEEPSEEK_API_KEY", "TAVILY_API_KEY"] },
   "observability": { "enabled": true }
