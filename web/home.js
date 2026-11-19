@@ -17,7 +17,9 @@ const SAMPLE = "11/20 Fuglen 咖啡 澳白好喝\n11/20 下北泽 逛古着\n周
 const ARRIVE_LABELS = { morning: "上午到", afternoon: "下午到", evening: "晚上到" };
 const LEAVE_LABELS = { morning: "上午走", afternoon: "下午走", evening: "晚上走" };
 
-const state = { items: [], notes: [], view: "date", editingId: null, trip: memoNormalizeTrip({}), undo: null, proposal: null };
+const state = { items: [], notes: [], view: "date", editingId: null, trip: memoNormalizeTrip({}), undo: null, proposal: null, nearbyId: null, relocateId: null };
+// “附近”跳到谷歌地图搜索：用日文词搜，结果更贴近当地。
+const NEARBY = [["吃饭", "レストラン"], ["咖啡", "カフェ"], ["逛逛", "観光スポット"]];
 let idCounter = 0;
 
 const $ = (selector) => document.querySelector(selector);
@@ -75,7 +77,38 @@ function tripSummary() {
   const trip = state.trip;
   if (!trip.days) return "设置出发日期和天数";
   const start = memoParseIso(trip.start);
-  return [start ? `${start.getUTCMonth() + 1}/${start.getUTCDate()} 出发` : "出发日期未定", `${trip.days} 天`, ARRIVE_LABELS[trip.arrive], LEAVE_LABELS[trip.leave], `每天最多 ${trip.perDay} 处`].join(" · ");
+  return [start ? `${start.getUTCMonth() + 1}/${start.getUTCDate()} 出发` : "出发日期未定", `${trip.days} 天`, staySummary(), ARRIVE_LABELS[trip.arrive], LEAVE_LABELS[trip.leave], `每天最多 ${trip.perDay} 处`].filter(Boolean).join(" · ");
+}
+
+// “住东京 3 晚、京都 2 晚”：连续住同一处的合并。
+function staySummary() {
+  const runs = [];
+  for (const city of memoNights(state.trip)) {
+    if (runs.length && runs.at(-1).city === city) runs.at(-1).count += 1; else runs.push({ city, count: 1 });
+  }
+  const named = runs.filter((run) => run.city);
+  return named.length ? `住${named.map((run) => `${run.city} ${run.count} 晚`).join("、")}` : "";
+}
+
+// 行程弹窗里的“每晚住哪”：天数变了就重画，已经填的保留。
+function renderStayInputs(values) {
+  const days = Number($("#trip-days").value);
+  const nights = Number.isInteger(days) && days >= 2 && days <= 14 ? days - 1 : 0;
+  $("#trip-stays-box").hidden = !nights;
+  $("#trip-stays").innerHTML = Array.from({ length: nights }, (_, index) => `<label>第 ${index + 1} 晚<input data-stay="${index}" maxlength="20" placeholder="${index ? "同上" : "例如 东京"}" value="${escapeHtml(values[index] || "")}"></label>`).join("");
+  checkStays();
+}
+
+function currentStayValues() {
+  return [...document.querySelectorAll("[data-stay]")].map((input) => input.value.trim());
+}
+
+// 认不出的城市当场提示：编排时不会按它分配，免得用户以为写了就生效。
+function checkStays() {
+  const unknown = [...new Set(currentStayValues().filter((value) => value && !memoStayPrefecture(value)))];
+  const warn = $("#trip-stays-warn");
+  warn.hidden = !unknown.length;
+  warn.textContent = unknown.length ? `认不出“${unknown.join("”“")}”在哪个县，编排时不会按它分配。可以换成附近的大城市名。` : "";
 }
 
 function openTrip() {
@@ -85,12 +118,13 @@ function openTrip() {
   $("#trip-arrive").value = trip.arrive;
   $("#trip-leave").value = trip.leave;
   $("#trip-per-day").value = String(trip.perDay);
+  renderStayInputs(trip.stays);
   $("#trip-dialog").showModal();
 }
 
 function saveTrip(event) {
   event.preventDefault();
-  const next = memoNormalizeTrip({ start: $("#trip-start").value, days: Number($("#trip-days").value), arrive: $("#trip-arrive").value, leave: $("#trip-leave").value, perDay: Number($("#trip-per-day").value) });
+  const next = memoNormalizeTrip({ start: $("#trip-start").value, days: Number($("#trip-days").value), arrive: $("#trip-arrive").value, leave: $("#trip-leave").value, perDay: Number($("#trip-per-day").value), stays: currentStayValues() });
   if (!next.days) { $("#trip-days").focus(); return; }
   state.trip = next;
   alignToTrip();
@@ -105,6 +139,7 @@ function dayLabel(dayKey) {
   const label = dayLabelBase(dayKey);
   const tripDay = tripDays().find((day) => day.key === dayKey);
   if (tripDay && label.num) label.trip = `第 ${tripDay.index} 天`;
+  if (tripDay?.stay?.length) label.stay = `住${tripDay.stay.join("→")}`;
   if (dayKey && dayKey === todayIso()) label.today = true;
   return label;
 }
@@ -135,6 +170,14 @@ function routeUrl(items) {
   const stops = items.filter((item) => item.status === "located").map((item) => [item.localName || item.name, item.city, item.prefecture].filter(Boolean).join(" "));
   return stops.length >= 2 ? `https://www.google.com/maps/dir/${stops.slice(0, 9).map(encodeURIComponent).join("/")}` : "";
 }
+
+function nearbyUrl(item, word) {
+  const place = item.localName || [item.name, item.city || item.cityHint].filter(Boolean).join(" ");
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place} 周辺 ${word}`)}`;
+}
+
+// 连锁店定不到具体哪家、不在日本的地点，“附近”没有意义。
+function canNearby(item) { return !["chain", "outside_japan"].includes(item.status); }
 
 function mapUrl(item) {
   const query = [item.localName || item.name, item.area, item.city || item.cityHint, item.prefecture || "日本"].filter(Boolean).join(" ");
@@ -172,9 +215,11 @@ function itemHtml(item, options) {
       <div><span class="item-name">${escapeHtml(item.name)}</span>${item.localName && foldName(item.localName) !== foldName(item.name) ? `<span class="item-local">${escapeHtml(item.localName)}</span>` : ""}</div>
       ${item.note ? `<p class="item-note">${escapeHtml(item.note)}</p>` : ""}
       <p class="item-where">${whereHtml(item, options)}</p>
+      ${state.nearbyId === item.id && canNearby(item) ? `<p class="item-nearby">附近找：${NEARBY.map(([label, word]) => `<a href="${nearbyUrl(item, word)}" target="_blank" rel="noreferrer">${label}</a>`).join("")}<span>在谷歌地图里打开</span></p>` : ""}
     </div>
     <div class="item-side">
       <a class="mini" href="${mapUrl(item)}" target="_blank" rel="noreferrer">地图</a>
+      ${canNearby(item) ? `<button class="mini" type="button" data-nearby="${item.id}" aria-expanded="${state.nearbyId === item.id}">附近</button>` : ""}
       <select class="mini move" data-move="${item.id}" aria-label="把${escapeHtml(item.name)}移到哪一天">${moveOptions(item)}</select>
       <button class="mini" type="button" data-edit="${item.id}">修改</button>
     </div>
@@ -237,7 +282,7 @@ function renderByDate(onlyKey = null) {
     const head = label.num
       ? `<span class="daymark-num">${label.num}</span><span class="daymark-week">${label.week}</span>`
       : `<span class="daymark-text">${escapeHtml(label.text)}</span>`;
-    const chips = `${label.today ? '<span class="daymark-chip is-today">今天</span>' : ""}${label.trip ? `<span class="daymark-chip">${label.trip}</span>` : ""}`;
+    const chips = `${label.today ? '<span class="daymark-chip is-today">今天</span>' : ""}${label.trip ? `<span class="daymark-chip">${label.trip}</span>` : ""}${label.stay ? `<span class="daymark-chip is-stay">${escapeHtml(label.stay)}</span>` : ""}`;
     const route = dayKey ? routeUrl(items) : "";
     const list = items.length ? items.map((item) => itemHtml(item, { showDay: false, draggable: true })).join("") : '<li class="empty-day">这天还没安排，可以把地点拖到这里。</li>';
     return `<section class="group" data-day="${escapeHtml(dayKey)}">
@@ -276,7 +321,7 @@ async function arrange() {
   const dayHtml = (plan.days || []).filter((day) => (plan.order?.[day.key] || []).length).map((day) => {
     const label = dayLabel(day.key);
     const rows = plan.order[day.key].map((id) => byId.get(id)).filter(Boolean).map((item) => `<li class="${plan.assign[item.id] ? "is-new" : ""}"><span class="plan-name">${escapeHtml(item.name)}</span><span class="plan-where">${escapeHtml(placeText(item) || "")}${SLOT_LABELS[item.slot] ? ` · ${SLOT_LABELS[item.slot]}` : ""}</span>${plan.assign[item.id] ? '<span class="plan-flag">新排入</span>' : '<span class="plan-flag is-kept">原有</span>'}</li>`).join("");
-    return `<section class="plan-day"><h3>${escapeHtml(label.spoken || label.text)}${label.trip ? `<span>${label.trip}</span>` : ""}</h3>${plan.reasons?.[day.key] ? `<p class="plan-reason">${escapeHtml(plan.reasons[day.key])}</p>` : ""}<ul>${rows}</ul></section>`;
+    return `<section class="plan-day"><h3>${escapeHtml(label.spoken || label.text)}${label.trip ? `<span>${label.trip}</span>` : ""}${label.stay ? `<span>${escapeHtml(label.stay)}</span>` : ""}</h3>${plan.reasons?.[day.key] ? `<p class="plan-reason">${escapeHtml(plan.reasons[day.key])}</p>` : ""}<ul>${rows}</ul></section>`;
   }).join("");
   const left = (plan.left || []).map((entry) => ({ item: byId.get(entry.id), reason: entry.reason })).filter((entry) => entry.item);
   const leftHtml = left.length ? `<section class="plan-day is-left"><h3>先不排的 ${left.length} 处</h3><ul>${left.map((entry) => `<li><span class="plan-name">${escapeHtml(entry.item.name)}</span><span class="plan-where">${escapeHtml(entry.reason)}</span></li>`).join("")}</ul></section>` : "";
@@ -458,7 +503,8 @@ async function postJson(path, body) {
   return data;
 }
 
-async function locate(ids) {
+// fresh：用户说位置不对，让后端跳过缓存重新查。
+async function locate(ids, { fresh = false } = {}) {
   const targets = state.items.filter((item) => ids.includes(item.id));
   if (!targets.length) return;
   for (const item of targets) item.status = "pending";
@@ -467,7 +513,7 @@ async function locate(ids) {
   for (let index = 0; index < targets.length; index += LOCATE_BATCH) batches.push(targets.slice(index, index + LOCATE_BATCH));
   await Promise.all(batches.map(async (batch) => {
     try {
-      const data = await postJson("/api/locate", { items: batch.map((item) => ({ id: item.id, name: item.name, note: item.note, kind: item.kind, cityHint: item.cityHint, queryJa: item.queryJa })) });
+      const data = await postJson("/api/locate", { items: batch.map((item) => ({ id: item.id, name: item.name, note: item.note, kind: item.kind, cityHint: item.cityHint, queryJa: item.queryJa, fresh })) });
       for (const result of data.results || []) {
         const item = state.items.find((entry) => entry.id === result.id);
         if (!item) continue;
@@ -477,7 +523,7 @@ async function locate(ids) {
       for (const item of batch) if (item.status === "pending") item.status = "unverified";
     } catch (error) {
       for (const item of batch) if (item.status === "pending") item.status = "failed";
-      if (error.code === "SEARCH_BUDGET") locate.budgetMessage = error.message;
+      if (error.code === "SEARCH_BUDGET" || error.code === "AI_BUDGET") locate.budgetMessage = error.message;
     }
     update();
   }));
@@ -488,6 +534,8 @@ async function collect(event) {
   const input = $("#memo-input");
   const text = input.value.trim();
   if (!text) { setStatus("先写下想去的地方。", true); input.focus(); return; }
+  // 只贴了链接：链接里的内容读不到，直接说明，不去调用接口。
+  if (!memoStripLinks(text).trim()) { setStatus("链接里的内容读不到。请把店名，或笔记里写到的店名和一句特点贴进来。", true); input.focus(); return; }
   const button = $("#collect");
   button.disabled = true;
   button.textContent = "正在整理";
@@ -547,7 +595,9 @@ function openEdit(id) {
   $("#edit-slot").value = item.slot || "any";
   const trip = /^day-(\d+)$/.exec(item.dayKey || "");
   $("#edit-day-hint").textContent = trip ? `现在排在第 ${trip[1]} 天。选一个日期会改成具体的那一天。` : "";
+  $("#edit-relocate-hint").hidden = state.relocateId !== id;
   $("#edit-dialog").showModal();
+  if (state.relocateId === id) $("#edit-city").focus();
 }
 
 function saveEdit(event) {
@@ -559,6 +609,9 @@ function saveEdit(event) {
   const city = $("#edit-city").value.trim();
   // 改了名称或补了城市，都需要重新查一次位置。
   const renamed = foldName(name) !== foldName(item.name) || city !== (item.cityHint || "");
+  // 从“位置不对”进来的，保存时一定重新查，并且不用缓存里的旧结论。
+  const wrong = state.relocateId === item.id;
+  state.relocateId = null;
   item.name = name;
   item.cityHint = city;
   item.note = $("#edit-note").value.trim();
@@ -567,7 +620,7 @@ function saveEdit(event) {
   else if (memoParseIso(item.dayKey)) item.dayKey = "";
   item.slot = $("#edit-slot").value;
   $("#edit-dialog").close();
-  if (renamed) { Object.assign(item, { queryJa: "", localName: "", prefecture: "", city: "", area: "", region: "", sources: [] }); locate([item.id]); }
+  if (renamed || wrong) { Object.assign(item, { queryJa: "", localName: "", prefecture: "", city: "", area: "", region: "", sources: [] }); locate([item.id], { fresh: wrong }); }
   else update();
   showToast("已保存");
 }
@@ -576,6 +629,7 @@ function openSource(id) {
   const item = state.items.find((entry) => entry.id === id);
   if (!item) return;
   const trust = item.verificationStatus === "official" ? "有官方资料" : item.verificationStatus === "multi_source" ? "有评价平台或多个来源" : "只有一个来源，出发前再确认一下";
+  state.sourceId = id;
   $("#source-title").textContent = item.localName || item.name;
   $("#source-content").innerHTML = `${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ""}<p>${escapeHtml(placeText(item) || "位置未确认")}</p><p class="field-hint">${trust}。营业时间、是否要预约请以店家最新信息为准。</p><ul>${(item.sources || []).map((source) => `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a></li>`).join("")}</ul>`;
   $("#source-dialog").showModal();
@@ -617,6 +671,16 @@ $("#clear-all").addEventListener("click", () => $("#clear-dialog").showModal());
 $("#clear-confirm").addEventListener("click", () => { state.items = []; state.notes = []; state.undo = null; $("#clear-dialog").close(); update(); setStatus(""); showToast("已清空"); });
 $("#trip-edit").addEventListener("click", openTrip);
 $("#trip-form").addEventListener("submit", saveTrip);
+$("#trip-days").addEventListener("input", () => renderStayInputs(currentStayValues()));
+$("#trip-stays").addEventListener("input", checkStays);
+$("#source-wrong").addEventListener("click", () => {
+  const id = state.sourceId;
+  $("#source-dialog").close();
+  if (!state.items.some((item) => item.id === id)) return;
+  state.relocateId = id;
+  openEdit(id);
+});
+$("#edit-dialog").addEventListener("close", () => { state.relocateId = null; });
 $("#arrange").addEventListener("click", arrange);
 $("#arrange-confirm").addEventListener("click", applyArrangement);
 $("#undo").addEventListener("click", undoArrangement);
@@ -633,9 +697,10 @@ $("#edit-delete").addEventListener("click", () => {
   showToast("已删除");
 });
 document.addEventListener("click", (event) => {
-  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-remove-note],[data-suggest],[data-close]");
+  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-remove-note],[data-suggest],[data-nearby],[data-close]");
   if (!target) return;
   if (target.id === "load-example") loadExample();
+  else if (target.dataset.nearby) { state.nearbyId = state.nearbyId === target.dataset.nearby ? null : target.dataset.nearby; render(); }
   else if (target.dataset.suggest) moveItem(target.dataset.suggest, target.dataset.target);
   else if (target.dataset.view) { state.view = target.dataset.view; update(); }
   else if (target.dataset.edit) openEdit(target.dataset.edit);

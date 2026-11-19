@@ -80,6 +80,7 @@
       <div><label for="edit-slot">时段</label><select id="edit-slot"><option value="any">不限</option><option value="morning">上午</option><option value="afternoon">下午</option><option value="evening">晚上</option></select></div>
     </div>
     <p class="field-hint" id="edit-day-hint"></p>
+    <p class="field-hint is-warn" id="edit-relocate-hint" hidden>写上城市或分店能帮它查准。保存后会重新查一次位置。</p>
     <div class="dialog-actions">
       <button class="primary" type="submit" value="save">保存</button>
       <button class="plain" type="button" id="edit-clear-date">不排日期</button>
@@ -101,6 +102,12 @@
       <div><label for="trip-arrive">第一天</label><select id="trip-arrive"><option value="morning">上午到</option><option value="afternoon">下午到</option><option value="evening">晚上到</option></select></div>
       <div><label for="trip-leave">最后一天</label><select id="trip-leave"><option value="morning">上午走</option><option value="afternoon">下午走</option><option value="evening">晚上走</option></select></div>
     </div>
+    <fieldset class="stays" id="trip-stays-box">
+      <legend>每晚住哪（可不填）</legend>
+      <p class="field-hint">写城市名，比如 东京、京都、博多。和前一晚一样就空着。填了以后，“帮我排一下”会把地点排到住处附近的日子。</p>
+      <div class="stay-grid" id="trip-stays"></div>
+      <p class="field-hint is-warn" id="trip-stays-warn" hidden></p>
+    </fieldset>
     <label for="trip-per-day">每天最多去几处</label>
     <select id="trip-per-day"><option value="3">3 处，慢慢逛</option><option value="4">4 处，一般</option><option value="5">5 处，排满一点</option></select>
     <div class="dialog-actions"><button class="primary" type="submit">保存</button><button class="plain" type="button" data-close>取消</button></div>
@@ -132,7 +139,7 @@
 <dialog id="source-dialog" aria-labelledby="source-title">
   <h2 id="source-title"></h2>
   <div id="source-content"></div>
-  <div class="dialog-actions"><button class="plain" type="button" data-close>关闭</button></div>
+  <div class="dialog-actions"><button class="plain" type="button" id="source-wrong">位置不对</button><button class="plain" type="button" data-close>关闭</button></div>
 </dialog>
 
 <dialog id="copy-dialog" aria-labelledby="copy-title">
