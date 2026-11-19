@@ -12,6 +12,7 @@ const memory = new Map();
 const TABI_KV = {
   async get(key, type) { const value = memory.get(key); return value === undefined ? null : type === "json" ? JSON.parse(value) : value; },
   async put(key, value) { memory.set(key, String(value)); },
+  async delete(key) { memory.delete(key); },
 };
 const env = {
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || "",

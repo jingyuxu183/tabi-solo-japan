@@ -85,11 +85,11 @@ a { color: inherit; }
 .group-note.is-warn { background: #fdf1ee; color: var(--stamp-dark); }
 
 /* 日期标题：日历撕页 */
-.daymark { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px 6px 0 0; }
+.daymark { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px 6px 0 0; }
 .daymark-num { font-family: var(--num); font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; }
 .daymark-week { display: grid; place-items: center; min-width: 40px; height: 26px; padding: 0 7px; border-radius: 4px; background: var(--stamp); color: #fff; font-size: 13px; font-weight: 700; }
 .daymark-text { font-size: 19px; font-weight: 800; }
-.daymark-count { margin-left: auto; font-size: 13px; color: var(--muted); }
+.daymark-count { margin-left: auto; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .daymark.is-loose { border-style: dashed; background: transparent; }
 .daymark.is-loose + .group-list { border-style: dashed; border-top: 0; }
 
@@ -214,3 +214,14 @@ dialog input, dialog select, dialog textarea { width: 100%; padding: 10px 11px; 
   .pending::before { animation: none; border-right-color: var(--muted); }
   #toast { transition: none; }
 }
+
+/* ---------- 每晚住哪、附近 ---------- */
+fieldset.stays { margin: 14px 0 0; padding: 0; border: 0; }
+fieldset.stays legend { padding: 0; font-size: 13px; color: var(--muted); }
+.stay-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0 10px; }
+.stay-grid label { margin-top: 8px; }
+.field-hint.is-warn { color: var(--stamp-dark); }
+.item-nearby { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.item-nearby a { color: #1f5f86; text-underline-offset: 3px; }
+.daymark-chip.is-stay { background: rgba(22, 37, 43, .07); color: var(--muted); }
+.is-today-view [data-nearby] { display: inline-flex; align-items: center; }

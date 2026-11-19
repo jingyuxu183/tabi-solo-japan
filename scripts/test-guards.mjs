@@ -26,7 +26,7 @@ globalThis.fetch = async (url, init) => {
 
 function fakeKv() {
   const store = new Map();
-  return { store, async get(key, type) { const value = store.get(key); return value === undefined ? null : type === "json" ? JSON.parse(value) : value; }, async put(key, value) { store.set(key, String(value)); } };
+  return { store, async get(key, type) { const value = store.get(key); return value === undefined ? null : type === "json" ? JSON.parse(value) : value; }, async put(key, value) { store.set(key, String(value)); }, async delete(key) { store.delete(key); } };
 }
 let ip = 0;
 async function locate(env, items, sameIp = null) {
@@ -138,5 +138,27 @@ await test("联网寻找：搜索额度不够一次完整寻找时，不再调�
   assert.equal(blocked.data.code, "SEARCH_BUDGET");
   assert.equal(calls.deepseek, 0);
   assert.equal(calls.tavily, 0);
+});
+await test("位置不对：重新查时跳过缓存；这次没查到，就删掉旧结论", async () => {
+  const kv = fakeKv();
+  const env = { TABI_KV: kv };
+  calls.tavily = 0;
+  await locate(env, [item("a", "丁咖啡")]);
+  assert.equal(calls.tavily, 1);
+  assert.equal(kv.store.size >= 1, true);
+  await locate(env, [{ ...item("a", "丁咖啡"), fresh: true }]);
+  assert.equal(calls.tavily, 2, "fresh 的地点不读缓存");
+  const cacheKey = [...kv.store.keys()].find((key) => key.startsWith("loc:"));
+  // 让下一次“查不到”：模型说没找到。
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes("tavily")) return realFetch(url, init);
+    return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ results: [{ id: "a", found: false }] }) } }] }), { status: 200 });
+  };
+  try {
+    const again = await locate(env, [{ ...item("a", "丁咖啡"), fresh: true }]);
+    assert.equal(again.data.results[0].status, "unverified");
+    assert.equal(kv.store.has(cacheKey), false, "错的旧结论被删掉");
+  } finally { globalThis.fetch = realFetch; }
 });
 console.log(`Deploy guard tests passed (${count})`);

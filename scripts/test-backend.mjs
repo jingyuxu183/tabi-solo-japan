@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const [catalog, shared, runtime] = await Promise.all([readFile(resolve(root, "data/catalog.json"), "utf8"), readFile(resolve(root, "shared/memo.js"), "utf8"), readFile(resolve(root, "worker/runtime.js"), "utf8")]);
-const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan"];
+const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights"];
 const dir = await mkdtemp(join(tmpdir(), "tabi-test-"));
 const file = join(dir, "runtime.mjs");
 await writeFile(file, `const ASSETS = {};\nconst CATALOG = ${catalog};\n${shared}\n${runtime}\nexport { ${names.join(", ")} };`);
@@ -286,7 +286,7 @@ test("规则编排：同区同天、不同县分开、已定日期的不动、�
   assert.notEqual(plan.assign.k1, "day-2");
   assert.deepEqual(plan.left.map((entry) => entry.id), ["x"]);
   assert.equal(plan.order["day-2"].at(-1), "b1", "晚上的排在当天最后");
-  assert.deepEqual(t.memoArrangeScore(items, plan.assign, days), { splitCities: 0, mixedDays: 0, overCapacity: 0, placed: 5 });
+  assert.deepEqual(t.memoArrangeScore(items, plan.assign, days), { splitCities: 0, mixedDays: 0, farDays: 0, offStay: 0, overCapacity: 0, placed: 5 });
 });
 test("规则编排：排不下时不超上限，也不把同一个区拆到两天", () => {
   const items = [P("a1", "东京都", "新宿区", ""), P("a2", "东京都", "新宿区", ""), P("a3", "东京都", "新宿区", ""), P("b1", "东京都", "中央区", ""), P("b2", "东京都", "中央区", ""), P("c1", "东京都", "世田谷区", ""), P("c2", "东京都", "世田谷区", "")];
@@ -340,5 +340,80 @@ test("编排请求的输入校验", () => {
   assert.equal(normalized.length, 1);
   assert.equal(normalized[0].status, "other", "不是日本的县就当作位置未知");
   assert.equal(normalized[0].dayKey, "2026-11-21");
+});
+test("粘贴的链接不当作地点", () => {
+  const parsed = t.memoLocalParse("福冈 烧鸟 无敌好吃\nhttps://maps.app.goo.gl/tg2GYf4QttQPgfwd9?g_st=ic\n博多站 兑换 JR Pass http://xhslink.com/a/AbC123", "2026-11-19");
+  assert.ok(parsed.items.every((item) => !/https?|goo\.gl|xhslink/.test(`${item.name} ${item.note}`)), JSON.stringify(parsed.items));
+  assert.equal(parsed.items.length, 2);
+  assert.equal(t.memoStripLinks("https://maps.app.goo.gl/x?g_st=ic").trim(), "");
+  assert.equal(t.memoStripLinks("看这家（https://a.com/b）不错").replace(/\s+/g, ""), "看这家（）不错");
+});
+test("县的远近：同县 0、相邻 1、隔一个县 2，更远不算近", () => {
+  assert.equal(t.memoPrefDistance("东京都", "东京"), 0);
+  assert.equal(t.memoPrefDistance("东京都", "神奈川县"), 1);
+  assert.equal(t.memoPrefDistance("东京都", "静冈县"), 2);
+  assert.equal(t.memoPrefDistance("福冈县", "鹿儿岛县"), 2);
+  assert.equal(t.memoPrefDistance("京都府", "奈良县"), 1);
+  assert.equal(t.memoPrefDistance("大阪府", "神奈川县"), Infinity);
+  assert.equal(t.memoPrefDistance("北海道", "青森县"), Infinity, "北海道和青森虽有隧道，但不算相邻");
+  assert.equal(t.memoPrefDistance("火星县", "东京都"), Infinity);
+});
+test("住宿城市：城市名认出所在的县，认不出的留空", () => {
+  assert.equal(t.memoStayPrefecture("博多"), "福冈");
+  assert.equal(t.memoStayPrefecture("別府"), "大分", "日文写法也认");
+  assert.equal(t.memoStayPrefecture("京都市"), "京都");
+  assert.equal(t.memoStayPrefecture("新宿站"), "东京");
+  assert.equal(t.memoStayPrefecture("东京都"), "东京");
+  assert.equal(t.memoStayPrefecture("长崎"), "长崎");
+  assert.equal(t.memoStayPrefecture("钏路"), "北海道");
+  assert.equal(t.memoStayPrefecture("某个小村"), "");
+});
+test("行程：每晚住哪，空着沿用前一晚；换城市那天两处都算", () => {
+  const trip = { days: 5, stays: ["东京", "", "京都"] };
+  assert.deepEqual(t.memoNights(t.memoNormalizeTrip(trip)), ["东京", "东京", "京都", "京都"]);
+  assert.deepEqual(t.memoTripDays(trip).map((day) => day.stay), [["东京"], ["东京"], ["东京", "京都"], ["京都"], ["京都"]]);
+  assert.deepEqual(t.memoTripDays({ days: 3 }).map((day) => day.stay), [[], [], []], "不写就不限制");
+});
+test("规则编排：写了住哪，地点排到住处附近的日子", () => {
+  const items = [P("t1", "东京都", "涩谷区", "原宿"), P("t2", "东京都", "涩谷区", "表参道"), P("k1", "京都府", "京都市", "祇园"), P("k2", "京都府", "京都市", "清水寺"), P("o1", "大阪府", "大阪市", "难波")];
+  // 第 1 晚住京都，第 2 晚起住东京：第 2 天是换城市的日子，第 3、4 天整天在东京。
+  const days = t.memoTripDays({ days: 4, arrive: "morning", leave: "evening", perDay: 3, stays: ["京都", "东京", ""] });
+  const plan = t.memoArrangeRules(items, days);
+  assert.ok(["day-1", "day-2"].includes(plan.assign.k1), JSON.stringify(plan.assign));
+  assert.equal(plan.assign.k1, plan.assign.k2);
+  assert.ok(["day-1", "day-2"].includes(plan.assign.o1), "大阪离京都近，排在住京都的日子");
+  assert.ok(["day-3", "day-4"].includes(plan.assign.t1), "整天在东京的日子优先于换城市那天");
+  assert.equal(plan.assign.t1, plan.assign.t2);
+  const far = t.memoArrangeRules([P("h1", "北海道", "札幌市", "")], days);
+  assert.deepEqual(far.assign, {});
+  assert.match(far.left[0].reason, /离这几天住的地方都比较远/);
+});
+test("规则编排：不把相距远的县排进同一天，宁可不排", () => {
+  // 示例备忘里实测出现过：大阪的梅田被排进已有镰仓的那天。
+  const items = [P("km", "神奈川县", "镰仓市", "", { dayKey: "day-1" }), P("tk", "东京都", "涩谷区", "", { dayKey: "day-2" }), P("um", "大阪府", "大阪市", "梅田"), P("ys", "神奈川县", "横滨市", "")];
+  const days = t.memoTripDays({ days: 2, arrive: "morning", leave: "evening", perDay: 4 });
+  const plan = t.memoArrangeRules(items, days);
+  assert.equal(plan.assign.um, undefined, "大阪和镰仓、涩谷都不相邻");
+  assert.match(plan.left.find((entry) => entry.id === "um").reason, /离它较远/);
+  assert.ok(plan.assign.ys, "横滨和镰仓、东京都相邻，可以排");
+  assert.equal(t.memoArrangeScore(items, plan.assign, days).farDays, 0);
+  assert.equal(t.memoArrangeScore(items, { um: "day-1" }, days).farDays, 1, "打分能认出这种排法");
+});
+test("京都、大阪按片区分组，其他城市不变", () => {
+  const key = (city, area, name = "x") => t.memoCityKey({ prefecture: "京都府", city, area, name });
+  assert.notEqual(key("京都市", "伏见稻荷"), key("京都市", "岚山"));
+  assert.equal(key("京都市", "祇园"), key("京都市", "清水寺"));
+  assert.equal(key("京都市", "", "% Arabica 岚山"), key("京都市", "嵯峨野"), "街区没写时看地点名");
+  assert.equal(key("京都市", "某个没收录的地方"), "京都府|京都市", "认不出片区的按整个市算");
+  assert.notEqual(t.memoCityKey({ prefecture: "大阪府", city: "大阪市", area: "梅田" }), t.memoCityKey({ prefecture: "大阪府", city: "大阪市", area: "难波" }));
+  assert.equal(t.memoCityKey({ prefecture: "东京都", city: "涩谷区", area: "原宿" }), "东京都|涩谷区");
+});
+test("模型编排的校验：排到离住处远的日子、和当天其他县不相邻的，都不采用", () => {
+  const items = [P("t1", "东京都", "涩谷区", ""), P("k1", "京都府", "京都市", "祇园"), P("km", "神奈川县", "镰仓市", "", { dayKey: "day-3" }), P("o1", "大阪府", "大阪市", "难波")];
+  const days = t.memoTripDays({ days: 3, arrive: "morning", leave: "evening", perDay: 4, stays: ["东京", "东京"] });
+  const plan = t.normalizeArrangePlan({ days: [{ key: "day-1", order: ["t1", "k1"], reason: "x" }, { key: "day-3", order: ["km", "o1"], reason: "y" }] }, items, days);
+  assert.deepEqual(plan.assign, { t1: "day-1" }, "京都排在住东京的日子、大阪和镰仓同一天，都不采用");
+  assert.notEqual(plan.reasons["day-1"], "x", "组被截短后，理由按实际内容重新生成");
+  assert.deepEqual(plan.left.map((entry) => entry.id).sort(), ["k1", "o1"]);
 });
 console.log(`Backend unit tests passed (${count})`);

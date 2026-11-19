@@ -10,10 +10,6 @@ const PLACE_ENTITY_TYPES = new Set(["restaurant", "cafe", "shop", "attraction", 
 const DEEPSEEK_TIMEOUT_MS = 60_000;
 const TAVILY_TIMEOUT_MS = 15_000;
 
-// 日文新字体 / 繁体 → 简体。用于比较地名，不用于展示。
-const KANJI_PAIRS = "東东宮宫廣广広广島岛嶋岛岡冈長长澤泽沢泽濱滨浜滨沖冲繩绳縄绳鳥鸟愛爱靜静気气氣气徳德児儿兒儿縣县県县區区馬马葉叶賀贺庫库関关關关館馆倉仓鎌镰戸户橋桥須须瀬濑豊丰塩盐軽轻國国會会湯汤溫温門门飛飞諏诹訪访釧钏蘭兰別别見见鶴鹤龍龙竜龙滝泷瀧泷﨑崎髙高櫻樱桜樱楽乐樂乐園园銀银條条蘆芦熱热亀龟龜龟雲云奧奥歳岁勝胜帯带網网渋涩駅站蔦茑場场走走稚稚内内陸陆羽羽後后前前総总武武蔵藏衛卫錦锦糸丝魚鱼塚冢歌歌舞舞伎伎伊伊勢势紀纪淡淡路路姫姬竹竹原原鞆鞆尾尾道道呉吴萩萩備备讃赞岐岐松松阪阪諫谏対对馬马壱壹岐岐与与論论縄绳";
-const KANJI_MAP = new Map();
-for (let i = 0; i + 1 < KANJI_PAIRS.length; i += 2) if (KANJI_PAIRS[i] !== KANJI_PAIRS[i + 1]) KANJI_MAP.set(KANJI_PAIRS[i], KANJI_PAIRS[i + 1]);
 
 const REGION_PREFECTURES = {
   北海道: ["北海道"],
@@ -390,9 +386,14 @@ async function readLocateCache(env, item) {
   } catch { return null; }
 }
 
-async function writeLocateCache(env, item, result) {
+async function writeLocateCache(env, item, result, { replace = false } = {}) {
+  if (!env?.TABI_KV) return;
   // 只记有把握的结论；“没查到”可能只是这次搜索不走运，不缓存。
-  if (!env?.TABI_KV || !["located", "chain", "outside_japan"].includes(result?.status)) return;
+  // 用户说位置不对、重新查也没查到时，删掉旧结论，免得别人再拿到那个错的位置。
+  if (!["located", "chain", "outside_japan"].includes(result?.status)) {
+    if (replace) try { await env.TABI_KV.delete(locateCacheKey(item)); } catch (error) { console.error("Locate cache delete failed", error); }
+    return;
+  }
   const { id, ...rest } = result;
   try { await env.TABI_KV.put(locateCacheKey(item), JSON.stringify(rest), { expirationTtl: LOCATE_CACHE_DAYS * 86400 }); } catch (error) { console.error("Locate cache write failed", error); }
 }
@@ -418,10 +419,6 @@ function normalizeRegion(value) {
 // 不截断的文本折叠：小写、简体化、去掉空白与常见分隔符，用于在长证据里查找名称。
 function foldText(value) {
   return toSimplified(String(value ?? "").toLowerCase()).replace(/[\s・·　\-—_.,，。()（）「」『』【】]/g, "");
-}
-
-function toSimplified(value) {
-  return [...String(value ?? "")].map((char) => KANJI_MAP.get(char) || char).join("");
 }
 
 // 去掉行政后缀后比较；“京都”“北海道”本身以后缀字结尾，需要保护。
@@ -1096,8 +1093,10 @@ async function collectMemo(request, env) {
   if (await overLimit(request, env, "collect", 10)) return json({ error: "请求过于频繁，请稍后再试" }, 429);
   let input;
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
-  const text = typeof input?.text === "string" ? input.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim() : "";
-  if (!text) return json({ error: "先写下想去的地方" }, 400);
+  const rawText = typeof input?.text === "string" ? input.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim() : "";
+  // 链接读不到内容，也不是地点：去掉后再拆分，免得模型或规则把它当成一条备忘。
+  const text = memoStripLinks(rawText).trim();
+  if (!text) return json(rawText ? { error: "链接里的内容读不到，请把店名或笔记里的文字贴进来", code: "ONLY_LINKS" } : { error: "先写下想去的地方" }, 400);
   if (text.length > 1200) return json({ error: "一次最多整理 1200 个字，可以分几次贴" }, 400);
   const today = memoParseIso(input?.today) ? input.today : memoIso(new Date());
   // 用完后页面会改用本地规则按行拆分。
@@ -1177,9 +1176,9 @@ async function locateMemo(request, env) {
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
   const validationError = validateLocateInput(input);
   if (validationError) return json({ error: validationError }, 400);
-  const allItems = input.items.map((item) => ({ id: item.id, name: cleanText(item.name, 60), note: cleanText(item.note, 80), kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", cityHint: cleanText(item.cityHint, 30), queryJa: cleanText(item.queryJa, 80) }));
-  // 先看缓存：查过的地点直接返回，只有没查过的才联网。
-  const cachedResults = await Promise.all(allItems.map((item) => readLocateCache(env, item)));
+  const allItems = input.items.map((item) => ({ id: item.id, name: cleanText(item.name, 60), note: cleanText(item.note, 80), kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", cityHint: cleanText(item.cityHint, 30), queryJa: cleanText(item.queryJa, 80), fresh: item.fresh === true }));
+  // 先看缓存：查过的地点直接返回，只有没查过的才联网。用户点了“位置不对”的（fresh）不读缓存，重新查。
+  const cachedResults = await Promise.all(allItems.map((item) => (item.fresh ? null : readLocateCache(env, item))));
   const cachedById = new Map(allItems.map((item, index) => [item.id, cachedResults[index]]).filter(([, value]) => value));
   const items = allItems.filter((item) => !cachedById.has(item.id));
   const merge = (fresh) => allItems.map((item) => cachedById.get(item.id) || fresh.get(item.id));
@@ -1226,7 +1225,7 @@ async function locateMemo(request, env) {
   }
   const byId = new Map((Array.isArray(result.parsed?.results) ? result.parsed.results : []).map((raw) => [String(raw?.id), raw]));
   const fresh = new Map(items.map((item) => [item.id, resolveLocatedItem(item, byId.get(item.id), sources)]));
-  await Promise.all(items.map((item) => writeLocateCache(env, item, fresh.get(item.id))));
+  await Promise.all(items.map((item) => writeLocateCache(env, item, fresh.get(item.id), { replace: item.fresh })));
   return json({ results: merge(fresh), sourceCount: sources.length, cachedCount: cachedById.size, usage: result.usage ? { total: (result.usage.prompt_tokens || 0) + (result.usage.completion_tokens || 0) } : null, model: "deepseek-flash" });
 }
 
@@ -1283,15 +1282,29 @@ function normalizeArrangePlan(parsed, items, days) {
     const prefectureCount = new Map();
     for (const item of items) if (item.prefecture) prefectureCount.set(item.prefecture, (prefectureCount.get(item.prefecture) || 0) + 1);
     const outOfTown = (entry) => Math.min(...entry.added.map((id) => prefectureCount.get(byId.get(id).prefecture) || 0), Infinity);
-    [...swappable].sort((a, b) => b.added.length - a.added.length || outOfTown(a) - outOfTown(b)).forEach((entry, index) => { if (pool[index]) entry.key = pool[index]; });
+    // 写了住哪时，一组只能换到住处附近的日子；没有合适的就留在原来那天，交给下一步截短。
+    const unused = [...pool];
+    for (const entry of [...swappable].sort((a, b) => b.added.length - a.added.length || outOfTown(a) - outOfTown(b))) {
+      const at = unused.findIndex((key) => entry.added.every((id) => memoStayOk(dayByKey.get(key), byId.get(id))));
+      if (at >= 0) entry.key = unused.splice(at, 1)[0];
+    }
   }
-  // 第三步：仍然超出余量的部分不采用（留给规则去补），而不是整份建议作废。
+  // 第三步：离那天住处较远的、和当天其他地点不在相邻县的、超出余量的，都不采用（留给规则去补），而不是整份建议作废。
   const assign = {};
   const order = {};
   const reasons = {};
   for (const entry of proposals) {
     const fixed = fixedByDay.get(entry.key);
-    const added = entry.added.slice(0, freeOf(entry.key));
+    const day = dayByKey.get(entry.key);
+    const kept = fixed.map((id) => byId.get(id));
+    const added = [];
+    for (const id of entry.added) {
+      if (added.length >= freeOf(entry.key)) break;
+      const item = byId.get(id);
+      if (!memoStayOk(day, item) || !memoNearAll(kept, item)) continue;
+      kept.push(item);
+      added.push(id);
+    }
     for (const id of added) assign[id] = entry.key;
     // 顺序：采用模型给的先后，但时段固定的仍然上午在前、晚上在后；模型漏掉的已排条目补在后面。
     const sequence = [...entry.listed.filter((id) => assign[id] === entry.key || fixed.includes(id)), ...fixed.filter((id) => !entry.listed.includes(id))];
@@ -1340,11 +1353,11 @@ async function arrangeMemo(request, env) {
   const user = {
     days: days.map((day) => {
       const fixed = items.filter((item) => item.dayKey === day.key);
-      return { key: day.key, day_number: day.index, free: Math.max(0, day.capacity - fixed.length), fixed: fixed.map((item) => ({ id: item.id, name: item.name, where: where(item), slot: item.slot })) };
+      return { key: day.key, day_number: day.index, stay: (day.stay || []).join("→"), free: Math.max(0, day.capacity - fixed.length), fixed: fixed.map((item) => ({ id: item.id, name: item.name, where: where(item), slot: item.slot })) };
     }),
     places: movable.map((item) => ({ id: item.id, name: item.name, where: where(item), kind: item.kind, slot: item.slot })),
   };
-  const system = `你是日本旅行备忘的“编排助手”。days 是行程里的每一天：free 是这天还能再排几处，fixed 是用户已经定在这天的地点。places 是还没排日期的地点和它们的位置。
+  const system = `你是日本旅行备忘的“编排助手”。days 是行程里的每一天：free 是这天还能再排几处，fixed 是用户已经定在这天的地点，stay 是这天住的城市（换城市的那天写成“东京→京都”，空着表示用户没写）。places 是还没排日期的地点和它们的位置。
 
 任务：把 places 分到各天，让同一天要去的地方彼此靠近，少走回头路。
 
@@ -1352,6 +1365,7 @@ async function arrangeMemo(request, env) {
 - 同一个市或区的地点放在同一天，不要拆到两天。这一条最优先：宁可某天少排一处，也不要为了把每天排满而拆开。
 - 相邻的区可以放在同一天（例如东京的涩谷区与港区的表参道、青山一带，台东区与墨田区）。不相邻的区不要仅仅因为“都在东京”就凑在一起，除非天数不够。
 - 不同县的地点放在不同的天。只有两地相邻、当天往返顺路（例如镰仓与藤泽的江之岛）才可以同一天。
+- stay 不为空时，地点要排到住处附近的日子：住东京的几天排东京和周边，住京都的几天排京都和周边。离所有住处都远的地点放进 unassigned。
 - 需要出城的一日游（例如从东京去镰仓、日光）尽量单独占一天，并避开 free 很小的到达日和离开日。
 - 每天新排入的地点数量不能超过 free。只要各天的 free 加起来够用，就要把每一处都排进去；到达日和离开日的 free 不为 0 时也可以用。实在排不下的才放进 unassigned，并用一句话说明。
 - 不能改动 fixed 里的地点；新地点优先排到已有相近 fixed 地点的那一天。
@@ -1374,7 +1388,7 @@ async function arrangeMemo(request, env) {
   // 模型有时会漏排几处：把它排好的当作已定，用规则把剩下的补进去；补完变差的话就只用模型排的那部分。
   if (plan) {
     const base = memoArrangeScore(items, rules.assign, days);
-    const acceptable = (score) => score.overCapacity === 0 && score.splitCities <= base.splitCities && score.mixedDays <= base.mixedDays;
+    const acceptable = (score) => score.overCapacity === 0 && score.farDays <= base.farDays && score.offStay <= base.offStay && score.splitCities <= base.splitCities && score.mixedDays <= base.mixedDays;
     const filled = fillArrangePlan(plan, items, days);
     for (const candidate of [filled, plan]) {
       const score = memoArrangeScore(items, candidate.assign, days);
