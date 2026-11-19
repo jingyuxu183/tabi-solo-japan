@@ -87,15 +87,18 @@ function staySummary() {
     if (runs.length && runs.at(-1).city === city) runs.at(-1).count += 1; else runs.push({ city, count: 1 });
   }
   const named = runs.filter((run) => run.city);
-  return named.length ? `住${named.map((run) => `${run.city} ${run.count} 晚`).join("、")}` : "";
+  if (named.length) return `住${named.map((run) => `${run.city} ${run.count} 晚`).join("、")}`;
+  return state.trip.days >= 2 ? "每晚住哪还没填" : "";
 }
 
 // 行程弹窗里的“每晚住哪”：天数变了就重画，已经填的保留。
 function renderStayInputs(values) {
   const days = Number($("#trip-days").value);
   const nights = Number.isInteger(days) && days >= 2 && days <= 14 ? days - 1 : 0;
-  $("#trip-stays-box").hidden = !nights;
-  $("#trip-stays").innerHTML = Array.from({ length: nights }, (_, index) => `<label>第 ${index + 1} 晚<input data-stay="${index}" maxlength="20" placeholder="${index ? "同上" : "例如 东京"}" value="${escapeHtml(values[index] || "")}"></label>`).join("");
+  // 一直显示这一栏：天数没填时说明先填天数，免得用户根本不知道能写住哪。
+  $("#trip-stays").innerHTML = nights
+    ? Array.from({ length: nights }, (_, index) => `<label>第 ${index + 1} 晚<input data-stay="${index}" maxlength="20" placeholder="${index ? "同上" : "例如 东京"}" value="${escapeHtml(values[index] || "")}"></label>`).join("")
+    : `<p class="field-hint">${days === 1 ? "只去一天，不用填住哪。" : "先填上面的“一共几天”，这里会列出每一晚。"}</p>`;
   checkStays();
 }
 
@@ -184,15 +187,6 @@ function mapUrl(item) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
-// “移到哪一天”的下拉：触屏设备拖不了，用它一步完成同样的事。
-function moveOptions(item) {
-  const days = [...new Set([...tripDays().map((day) => day.key), ...state.items.map((entry) => entry.dayKey || "").filter(Boolean)])].sort((a, b) => daySortValue(a).localeCompare(daySortValue(b)));
-  const options = days.filter((dayKey) => dayKey !== item.dayKey).map((dayKey) => { const label = dayLabel(dayKey); return `<option value="${escapeHtml(dayKey)}">${escapeHtml(label.spoken || label.text)}</option>`; });
-  if (item.dayKey) options.push('<option value="__none">还没排日期</option>');
-  options.push('<option value="__pick">选个日期…</option>');
-  return `<option value="">移到…</option>${options.join("")}`;
-}
-
 function whereHtml(item, { showDay }) {
   const parts = [];
   if (item.status === "located") parts.push(`<span class="place" style="--line:${REGION_COLORS[item.region] || "#8a979b"}">${escapeHtml(placeText(item, !showDay))}</span>`);
@@ -209,7 +203,7 @@ function whereHtml(item, { showDay }) {
 }
 
 function itemHtml(item, options) {
-  return `<li class="item ${item.done ? "is-done" : ""}" data-id="${item.id}" ${options.draggable ? 'draggable="true"' : ""}>
+  return `<li class="item ${item.done ? "is-done" : ""}" data-id="${item.id}" data-slot="${escapeHtml(item.slot || "any")}" ${options.draggable ? "data-drag" : ""}>
     <label class="tick"><input type="checkbox" data-done="${item.id}" ${item.done ? "checked" : ""}><span class="sr">去过了：${escapeHtml(item.name)}</span></label>
     <div class="item-main">
       <div><span class="item-name">${escapeHtml(item.name)}</span>${item.localName && foldName(item.localName) !== foldName(item.name) ? `<span class="item-local">${escapeHtml(item.localName)}</span>` : ""}</div>
@@ -220,9 +214,9 @@ function itemHtml(item, options) {
     <div class="item-side">
       <a class="mini" href="${mapUrl(item)}" target="_blank" rel="noreferrer">地图</a>
       ${canNearby(item) ? `<button class="mini" type="button" data-nearby="${item.id}" aria-expanded="${state.nearbyId === item.id}">附近</button>` : ""}
-      <select class="mini move" data-move="${item.id}" aria-label="把${escapeHtml(item.name)}移到哪一天">${moveOptions(item)}</select>
       <button class="mini" type="button" data-edit="${item.id}">修改</button>
     </div>
+    ${options.draggable ? `<span class="drag-handle" aria-hidden="true" title="按住拖到别的日子">⋮⋮</span>` : ""}
   </li>`;
 }
 
@@ -361,7 +355,7 @@ function describeDay(dayKey) {
   return label.spoken || label.text;
 }
 
-// 把一条备忘放到某一天；beforeId 有值时插到那一条前面，并跟随它的时段，这样落点就是看到的位置。
+// 把一条备忘放到某一天；beforeId 有值时插到那一条前面。
 function moveItem(id, dayKey, beforeId = null) {
   const item = state.items.find((entry) => entry.id === id);
   if (!item || beforeId === id) return;
@@ -369,50 +363,121 @@ function moveItem(id, dayKey, beforeId = null) {
   const changedDay = (item.dayKey || "") !== (dayKey || "");
   item.dayKey = dayKey || "";
   state.items = state.items.filter((entry) => entry.id !== id);
+  // 时段不跟着落点改：用户没写的时段不替他标。同一天里按时段排序，落点只决定同一时段里的先后。
   if (target) {
-    item.slot = target.slot;
     state.items.splice(state.items.indexOf(target), 0, item);
   } else state.items.push(item);
   update();
   if (changedDay) showToast(dayKey ? `已移到 ${describeDay(dayKey)}` : "已放回“还没排日期”");
 }
 
-let draggingId = null;
+// 拖动改日期：电脑上按住整条拖，手机上按住右侧的把手拖。
+// 用 Pointer Events 自己实现，不用浏览器自带的拖放：后者在手机上基本拖不动，拖的时候还会把整块日子显示成选中的样子。
+const drag = { pending: null, active: false, id: "", slot: "any", row: null, ghost: null, offsetX: 0, offsetY: 0, lastX: 0, lastY: 0, drop: null, speed: 0, raf: 0 };
 let pendingNewDayId = null;
-function clearDropMarks() { document.querySelectorAll(".is-drop, .is-drop-before").forEach((node) => node.classList.remove("is-drop", "is-drop-before")); }
+
+function clearDropMarks() { document.querySelectorAll(".is-drop, .is-drop-before, .is-drop-after").forEach((node) => node.classList.remove("is-drop", "is-drop-before", "is-drop-after")); }
+
 function bindDrag() {
-  const body = $("#memo-body");
-  body.addEventListener("dragstart", (event) => {
-    const row = event.target.closest?.(".item[draggable]");
-    if (!row) return;
-    draggingId = row.dataset.id;
-    event.dataTransfer.setData("text/plain", draggingId);
-    event.dataTransfer.effectAllowed = "move";
-    document.body.classList.add("is-dragging");
-    row.classList.add("is-dragged");
+  $("#memo-body").addEventListener("pointerdown", (event) => {
+    const row = event.target.closest(".item[data-drag]");
+    if (!row || event.button > 0 || drag.active) return;
+    const onHandle = Boolean(event.target.closest(".drag-handle"));
+    // 触屏只认把手，免得和上下滑动页面冲突；鼠标可以按住整条拖，但按在按钮、链接、勾选框上时不算。
+    if (!onHandle && (event.pointerType !== "mouse" || event.target.closest("a, button, input, select, label"))) return;
+    if (onHandle) event.preventDefault();
+    drag.pending = { id: row.dataset.id, row, x: event.clientX, y: event.clientY, pointerId: event.pointerId, immediate: onHandle };
   });
-  body.addEventListener("dragend", () => { draggingId = null; document.body.classList.remove("is-dragging"); clearDropMarks(); document.querySelectorAll(".is-dragged").forEach((node) => node.classList.remove("is-dragged")); });
-  body.addEventListener("dragover", (event) => {
-    if (!draggingId) return;
-    const zone = event.target.closest?.("[data-day]");
-    if (!zone) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    clearDropMarks();
-    zone.classList.add("is-drop");
-    const row = event.target.closest(".item");
-    if (row && row.dataset.id !== draggingId) row.classList.add("is-drop-before");
-  });
-  body.addEventListener("drop", (event) => {
-    const zone = event.target.closest?.("[data-day]");
-    const id = draggingId || event.dataTransfer.getData("text/plain");
-    if (!zone || !id) return;
-    event.preventDefault();
-    const row = event.target.closest(".item");
-    clearDropMarks();
-    if (zone.dataset.day === "__new") { openNewDay(id); return; }
-    moveItem(id, zone.dataset.day, row && row.dataset.id !== id ? row.dataset.id : null);
-  });
+  window.addEventListener("pointermove", onDragMove, { passive: false });
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", finishDrag);
+  // 拖动中不让页面跟着手指滚动；滚动交给靠近屏幕边缘时的自动滚动。
+  document.addEventListener("touchmove", (event) => { if (drag.active) event.preventDefault(); }, { passive: false });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && drag.active) finishDrag(); });
+}
+
+function onDragMove(event) {
+  const pending = drag.pending;
+  if (pending && !drag.active) {
+    if (event.pointerId !== pending.pointerId) return;
+    if (!pending.immediate && Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < 6) return;
+    startDrag(event);
+  }
+  if (!drag.active) return;
+  event.preventDefault();
+  drag.lastX = event.clientX;
+  drag.lastY = event.clientY;
+  // 浮起的小卡片只跟着上下移动，放在手指上方，不挡住手指下面的落点提示线。
+  drag.ghost.style.transform = `translate(${drag.offsetX}px, ${event.clientY - drag.offsetY}px)`;
+  updateDrop(event.clientX, event.clientY);
+  // 靠近屏幕上下边缘时自动滚动，长列表也能拖到别的日子。速度有上限；手指在底部“另排一天”那一栏上时不滚，方便放下。
+  const band = 64;
+  const barTop = document.querySelector(".newday")?.getBoundingClientRect().top || window.innerHeight;
+  const speed = (depth) => Math.min(12, Math.ceil(depth / 6));
+  drag.speed = event.clientY < band ? -speed(band - event.clientY) : event.clientY >= barTop - band && event.clientY < barTop ? speed(event.clientY - (barTop - band)) : 0;
+}
+
+function startDrag(event) {
+  const { row, id } = drag.pending;
+  const rect = row.getBoundingClientRect();
+  const item = state.items.find((entry) => entry.id === id);
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.innerHTML = `<strong>${escapeHtml(item?.name || "")}</strong>${item?.note ? `<span>${escapeHtml(item.note)}</span>` : ""}`;
+  ghost.style.width = `${Math.min(rect.width - 24, 320)}px`;
+  document.body.appendChild(ghost);
+  const box = ghost.getBoundingClientRect();
+  Object.assign(drag, { active: true, id, slot: row.dataset.slot || "any", row, ghost, offsetX: rect.left + 12, offsetY: box.height + 14 });
+  row.classList.add("is-dragged");
+  document.body.classList.add("is-dragging");
+  const tick = () => {
+    if (!drag.active) return;
+    if (drag.speed) { window.scrollBy(0, drag.speed); updateDrop(drag.lastX, drag.lastY); }
+    drag.raf = requestAnimationFrame(tick);
+  };
+  drag.raf = requestAnimationFrame(tick);
+}
+
+// 找落点：手指所在的那一天，以及插在哪两条之间。同一天里按时段排序，所以落点只能落在同一时段的那几条之间。
+function updateDrop(x, y) {
+  clearDropMarks();
+  drag.drop = null;
+  const element = document.elementFromPoint(x, y);
+  if (!element) return;
+  const newDay = element.closest(".newday");
+  if (newDay) { newDay.classList.add("is-drop"); drag.drop = { newDay: true }; return; }
+  const group = element.closest("#memo-body .group[data-day]");
+  if (!group) return;
+  group.classList.add("is-drop");
+  const rows = [...group.querySelectorAll(".item[data-drag]")].filter((row) => row.dataset.id !== drag.id);
+  const rank = (slot) => SLOT_ORDER[slot] ?? 2;
+  let index = rows.findIndex((row) => { const box = row.getBoundingClientRect(); return y < box.top + box.height / 2; });
+  if (index < 0) index = rows.length;
+  const lower = rows.filter((row) => rank(row.dataset.slot) < rank(drag.slot)).length;
+  const upper = rows.filter((row) => rank(row.dataset.slot) <= rank(drag.slot)).length;
+  index = Math.min(Math.max(index, lower), upper);
+  if (rows[index]) rows[index].classList.add("is-drop-before");
+  else if (rows.length) rows[rows.length - 1].classList.add("is-drop-after");
+  drag.drop = { dayKey: group.dataset.day, beforeId: rows[index]?.dataset.id || null };
+}
+
+function endDrag(event) {
+  if (drag.pending && !drag.active) { drag.pending = null; return; }
+  if (!drag.active || (drag.pending && event.pointerId !== drag.pending.pointerId)) return;
+  const { id, drop } = drag;
+  finishDrag();
+  if (!drop) return;
+  if (drop.newDay) openNewDay(id);
+  else moveItem(id, drop.dayKey, drop.beforeId);
+}
+
+function finishDrag() {
+  cancelAnimationFrame(drag.raf);
+  drag.ghost?.remove();
+  drag.row?.classList.remove("is-dragged");
+  document.body.classList.remove("is-dragging");
+  clearDropMarks();
+  Object.assign(drag, { pending: null, active: false, id: "", row: null, ghost: null, drop: null, speed: 0, raf: 0 });
 }
 
 function openNewDay(id) {
@@ -536,6 +601,7 @@ async function collect(event) {
   if (!text) { setStatus("先写下想去的地方。", true); input.focus(); return; }
   // 只贴了链接：链接里的内容读不到，直接说明，不去调用接口。
   if (!memoStripLinks(text).trim()) { setStatus("链接里的内容读不到。请把店名，或笔记里写到的店名和一句特点贴进来。", true); input.focus(); return; }
+  if (memoStripLinks(text).trim().length > MEMO_MAX_CHARS) { setStatus(`去掉链接后一次最多整理 ${MEMO_MAX_CHARS} 个字，可以分几次贴。`, true); input.focus(); return; }
   const button = $("#collect");
   button.disabled = true;
   button.textContent = "正在整理";
@@ -545,9 +611,11 @@ async function collect(event) {
   try {
     collected = await postJson("/api/collect", { text, today: todayIso() });
   } catch (error) {
-    if (error.code === "NO_ITEMS") { setStatus(error.message, true); button.disabled = false; button.textContent = "整理进备忘"; return; }
-    // 接口不可用时退回本地规则：能拆分、能认日期，但查不了位置。
+    if (["NO_ITEMS", "TOO_LONG", "ONLY_LINKS"].includes(error.code)) { setStatus(error.message, true); button.disabled = false; button.textContent = "整理进备忘"; return; }
+    // 接口不可用时退回本地规则：能拆分、能认日期，但查不了位置。记下原因，提示里写出来，方便查问题。
     online = false;
+    collect.failure = error.code || "NETWORK";
+    console.warn("collect failed, using local rules:", error.code, error.message);
     collected = memoLocalParse(text, todayIso());
   }
   const { added, duplicates } = addCollected(collected);
@@ -561,8 +629,8 @@ async function collect(event) {
   }
   input.value = "";
   updateCount();
-  const extra = [duplicates ? `${duplicates} 处已经在备忘里` : "", collected.truncated ? "一次最多整理 12 处，剩下的请再贴一次" : ""].filter(Boolean).join("；");
-  setStatus(online ? `记下了 ${added.length} 处，正在查它们各在哪里。${extra}` : `AI 暂时用不了，先按行记下了 ${added.length} 处；位置等能联网时再查。${extra}`);
+  const extra = [duplicates ? `${duplicates} 处已经在备忘里` : "", collected.truncated ? `一次最多整理 ${MEMO_MAX_ITEMS} 处，剩下的请再贴一次` : ""].filter(Boolean).join("；");
+  setStatus(online ? `记下了 ${added.length} 处，正在查它们各在哪里。${extra}` : `AI 暂时用不了（${collect.failure}），先按本地规则记下了 ${added.length} 处，拆得会粗一些；位置等能联网时再查。${extra}`);
   update();
   if (online && added.length) {
     await locate(added.map((item) => item.id));
@@ -659,7 +727,9 @@ async function copyText() {
 
 function updateCount() {
   const length = $("#memo-input").value.length;
-  $("#char-count").textContent = length > 900 ? `${length}/1200` : "";
+  // 链接不算字数：小红书帖子带一长串话题链接，去掉后才是要整理的内容。
+  const counted = memoStripLinks($("#memo-input").value).trim().length;
+  $("#char-count").textContent = counted > MEMO_MAX_CHARS * 0.8 ? `${counted}/${MEMO_MAX_CHARS}` : "";
 }
 
 // ---------- 事件 ----------
@@ -710,15 +780,6 @@ document.addEventListener("click", (event) => {
   else if (target.hasAttribute("data-close")) target.closest("dialog").close();
 });
 document.addEventListener("change", (event) => {
-  const moveId = event.target.dataset?.move;
-  if (moveId) {
-    const value = event.target.value;
-    event.target.value = "";
-    if (value === "__pick") openNewDay(moveId);
-    else if (value === "__none") moveItem(moveId, "");
-    else if (value) moveItem(moveId, value);
-    return;
-  }
   const id = event.target.dataset?.done;
   if (!id) return;
   const item = state.items.find((entry) => entry.id === id);
