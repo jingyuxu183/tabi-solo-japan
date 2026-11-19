@@ -98,7 +98,7 @@ a { color: inherit; }
 .sign-name { padding: 12px 14px 8px; font-size: 24px; font-weight: 800; line-height: 1.2; letter-spacing: 1px; }
 .sign-band { display: flex; justify-content: space-between; align-items: center; padding: 3px 14px; background: var(--line, #8a979b); color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 1px; }
 
-.item { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 13px 14px; }
+.item { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 13px 14px; }
 .item + .item { border-top: 1px solid var(--rule); }
 .tick { display: grid; place-items: center; width: 30px; height: 30px; margin-top: 1px; }
 .tick input { width: 20px; height: 20px; accent-color: var(--go); cursor: pointer; }
@@ -166,18 +166,26 @@ dialog.wide { width: min(640px, calc(100vw - 24px)); }
 .is-today-view .item-side .mini { min-height: 44px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 6px; font-size: 15px; font-weight: 700; color: var(--ink); }
 
 /* ---------- 拖动改日期 ---------- */
-.item[draggable="true"] { cursor: grab; }
-.item[draggable="true"]:active { cursor: grabbing; }
-.item.is-dragged { opacity: .4; }
-.group.is-drop .group-list, .group.is-drop .daymark { border-color: var(--stamp); }
-.group.is-drop .group-list { background: #fff8f6; }
+/* 把手在每条的右上角；拖的时候被拖的那条半透明留在原处，一份浮起来的跟着手指走，落点用一条红线标出。 */
+.item[data-drag] { grid-template-columns: 30px minmax(0, 1fr) auto 34px; }
+.drag-handle { grid-column: 4; grid-row: 1; display: grid; place-items: center; width: 34px; height: 40px; margin: -6px -8px 0 0; border-radius: 5px; color: #9aa6a8; font-size: 16px; letter-spacing: -3px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.drag-handle:hover { background: rgba(22, 37, 43, .07); color: var(--ink); }
+@media (hover: hover) { .item[data-drag] { cursor: grab; } .item[data-drag] :is(a, button, input, label) { cursor: pointer; } }
+.item.is-dragged { opacity: .35; }
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 40; display: flex; flex-direction: column; gap: 2px; padding: 9px 14px; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 8px; box-shadow: 0 10px 28px rgba(22, 37, 43, .25); pointer-events: none; }
+.drag-ghost strong { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drag-ghost span { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.is-dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.group.is-drop .daymark { box-shadow: inset 4px 0 0 var(--stamp); }
 .item.is-drop-before { box-shadow: inset 0 3px 0 var(--stamp); }
+.item.is-drop-after { box-shadow: inset 0 -3px 0 var(--stamp); }
+.group.is-drop .empty-day { outline: 2px dashed var(--stamp); outline-offset: -6px; }
+.is-today-view .drag-handle { display: none; }
+.is-today-view .item[data-drag] { grid-template-columns: 30px minmax(0, 1fr) auto; }
 /* 拖动时固定浮在屏幕底部：列表再长也够得着。 */
 .newday { display: none; position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20; width: min(560px, calc(100vw - 28px)); padding: 20px 14px; border: 2px dashed var(--ink); border-radius: 8px; background: var(--paper); box-shadow: 0 8px 28px rgba(22, 37, 43, .22); text-align: center; font-size: 16px; font-weight: 700; color: var(--ink); }
 body.is-dragging .newday { display: block; }
 .newday.is-drop { border-color: var(--stamp); color: var(--stamp-dark); background: #fff8f6; }
-select.move { appearance: none; -webkit-appearance: none; border: 0; background: none; cursor: pointer; max-width: 5.2em; text-overflow: ellipsis; }
-select.move:hover { background: rgba(22, 37, 43, .07); color: var(--ink); }
 
 /* ---------- 弹窗 ---------- */
 dialog { width: min(480px, calc(100vw - 28px)); max-height: 86vh; overflow: auto; padding: 24px; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink); background: var(--paper); }
@@ -207,6 +215,10 @@ dialog input, dialog select, dialog textarea { width: 100%; padding: 10px 11px; 
   .classic-entry { align-items: flex-start; flex-direction: column; }
   .item { grid-template-columns: 30px minmax(0, 1fr); }
   .item-side { grid-column: 2; margin-left: -9px; }
+  .item[data-drag] { grid-template-columns: 30px minmax(0, 1fr) 34px; }
+  .item[data-drag] .item-side { grid-column: 2 / 4; }
+  .drag-handle { grid-column: 3; }
+  .is-today-view .item[data-drag] { grid-template-columns: 30px minmax(0, 1fr); }
   .item-local { display: block; margin-left: 0; }
   .memo-tools { width: 100%; justify-content: space-between; }
 }

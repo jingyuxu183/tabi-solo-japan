@@ -989,7 +989,6 @@ async function discoverPlaces(request, env) {
 // ===== 备忘收件箱：把随手写的文字整理成地点，再联网核实它们在哪 =====
 
 const MEMO_KINDS = new Set(["restaurant", "cafe", "bar", "shop", "attraction", "museum", "temple", "park", "onsen", "gym", "hotel", "area", "other"]);
-const MEMO_MAX_ITEMS = 12;
 const LOCATE_MAX_ITEMS = 6;
 
 function displayPrefecture(value) {
@@ -1038,7 +1037,7 @@ function memoNearestDay(prefix, today) {
   return { dayKey: "", matched: "" };
 }
 
-// 一行一条的写法里，日期只有“单独成行”才作用于后面的行；和某个地点写在同一行的日期只属于那一行。
+// 一行一条的写法里，日期只有“单独成行”或是“Day1 …”这种小标题，才作用于后面的行；和某个地点写在同一行的日期只属于那一行。
 // 返回 undefined 表示在原文里找不到这一行（多半是整段话），这时沿用模型的判断。
 function memoLineDay(name, text, today) {
   const lines = String(text).split(/\n+/);
@@ -1048,6 +1047,9 @@ function memoLineDay(name, text, today) {
   const own = memoResolveDay(lines[at].slice(0, lines[at].toLowerCase().indexOf(String(name).toLowerCase())), today);
   if (own.dayKey) return own;
   for (let index = at - 1; index >= 0; index -= 1) {
+    // “Day1 札幌经典Citywalk”这种小标题对下面各行都生效，即使后面带着标题文字。
+    const heading = memoDayHeading(lines[index], today);
+    if (heading) return { dayKey: heading, matched: "" };
     const day = memoResolveDay(lines[index], today);
     if (!day.dayKey) continue;
     const rest = lines[index].replace(day.matched, "").replace(/(?:早上|上午|下午|晚上|傍晚)/g, "").replace(/[\s：:，,、。.\-—()（）]/g, "");
@@ -1084,7 +1086,7 @@ function normalizeMemoItems(parsed, text, today) {
       queryJa: cleanText(raw?.query_ja, 80),
     });
   }
-  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes: cleanList(parsed?.notes, 12, 120) };
+  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes: cleanList(parsed?.notes, 20, 120) };
 }
 
 async function collectMemo(request, env) {
@@ -1097,7 +1099,7 @@ async function collectMemo(request, env) {
   // 链接读不到内容，也不是地点：去掉后再拆分，免得模型或规则把它当成一条备忘。
   const text = memoStripLinks(rawText).trim();
   if (!text) return json(rawText ? { error: "链接里的内容读不到，请把店名或笔记里的文字贴进来", code: "ONLY_LINKS" } : { error: "先写下想去的地方" }, 400);
-  if (text.length > 1200) return json({ error: "一次最多整理 1200 个字，可以分几次贴" }, 400);
+  if (text.length > MEMO_MAX_CHARS) return json({ error: `去掉链接后一次最多整理 ${MEMO_MAX_CHARS} 个字，可以分几次贴`, code: "TOO_LONG" }, 400);
   const today = memoParseIso(input?.today) ? input.today : memoIso(new Date());
   // 用完后页面会改用本地规则按行拆分。
   if (!(await spendAiCalls(env, 1))) return json(AI_BUDGET_ERROR, 429);
@@ -1113,12 +1115,14 @@ async function collectMemo(request, env) {
 - kind 从 restaurant、cafe、bar、shop、attraction、museum、temple、park、onsen、gym、hotel、area、other 中选。街区、城市、车站一带用 area。
 - query_ja 是用来在日本搜索这个地点的日文搜索词，包含日文名称和城市（如果已知），例如“フグレン トウキョウ 渋谷 カフェ”。
 - 不是地点的事项（买交通卡、换钱、订票提醒等）放进 notes，原样保留。
+- 小红书式的攻略：“Day1 …”“第2天 …”这类小标题下面的地点，date_text 填这个小标题里的“Day1”“第2天”。路线里用“→”连起来的每一站，凡是具体的景点、店、街区、车站，都各算一个地点；括号里的话放进 note。
+- 交通安排（如“札幌→旭川”“JR至美瑛”“晚班机回东京”）、装备、拍摄器材、话题标签（#开头）、帖子标题都不是地点；交通和提醒放进 notes，其余忽略。
 - 用户没写的地点一个都不要加。
 
 只输出 JSON：
 {"items":[{"name":"Fuglen 咖啡","note":"澳白好喝","date_text":"11/20","slot":"any","city_hint":"","kind":"cafe","query_ja":"フグレン トウキョウ カフェ"}],"notes":["记得买 Suica"]}`;
   let result;
-  try { result = await callDeepSeekJson(env, { system, user: { memo_text: text }, maxTokens: 1800, temperature: 0.1, label: "DeepSeek memo collector" }); }
+  try { result = await callDeepSeekJson(env, { system, user: { memo_text: text }, maxTokens: 4000, temperature: 0.1, label: "DeepSeek memo collector" }); }
   catch (error) {
     console.error("Memo collect failed", error);
     return json({ error: "AI 暂时无法整理这段文字", code: "COLLECT_FAILED" }, 502);

@@ -92,6 +92,10 @@ function memoResolveSlot(text) {
   return { slot: "any", matched: "" };
 }
 
+// 一次整理的上限：去掉链接后最多多少字、最多认出多少处。小红书一篇五天的攻略大约 1500 字、30 处。
+const MEMO_MAX_CHARS = 3000;
+const MEMO_MAX_ITEMS = 30;
+
 const MEMO_KIND_WORDS = /^(?:咖啡|咖啡店|咖啡馆|拉面|寿司|烧肉|烧鸟|居酒屋|健身房|书店|神社|寺|公园|美术馆|博物馆|酒吧|温泉|古着|古着店|甜品|面包店|食堂|本店)$/;
 
 // AI 不可用时的本地拆分：一行一条，认日期、时段和“名称 + 一句特点”。
@@ -100,19 +104,48 @@ function memoLocalParse(text, todayIso) {
   const notes = [];
   let contextDay = "";
   let contextCity = "";
-  for (const rawLine of memoStripLinks(text).split(/[\n；;]+/)) {
-    let line = rawLine.replace(/^[\s\-•·*＊]+/, "").replace(/^\(?[0-9①-⑩]{1,2}[.、)）]\s*/, "").trim();
-    if (!line) continue;
+  const lines = memoStripLinks(text).split(/[\n；;]+/);
+  // 有“Day1”这种小标题的攻略：第一个小标题之前是帖子标题和开场白，不是地点。
+  const firstHeading = lines.findIndex((line) => memoDayHeading(line, todayIso));
+  lines.forEach((rawLine, lineIndex) => {
+    let line = memoStripEmoji(rawLine).replace(/^[\s\-•·*＊]+/, "").replace(/^\(?[0-9①-⑩]{1,2}[.、)）]\s*/, "").trim();
+    if (!line || (firstHeading > 0 && lineIndex < firstHeading)) return;
+    // 小红书攻略里的“Day1 标题”：只决定下面几行是哪一天，标题本身不是地点。
+    const headingDay = memoDayHeading(line, todayIso);
+    if (headingDay) { contextDay = headingDay; contextCity = ""; return; }
+    // 话题标签、“Tips：”“交通：”这类说明、坐飞机坐车的安排，都不是地点。
+    if (/^#/.test(line)) return;
+    if (/^(?:tips|攻略|交通|必备|冬季必备|注意|提示|备注)\s*[：:]/i.test(line) || /(?:班机|航班|飞往|新干线|直奔)/.test(line)) { notes.push(line); return; }
+    // “美食：狸小路「某某鲜鱼店」海鲜丼”：去掉标签；「」里的是店名。
+    line = line.replace(/^(?:路线|美食|美食雷达|吃|住|住宿|景点|打卡|购物)\s*[：:]\s*/, "");
+    const quoted = /「([^」]{1,30})」/.exec(line);
+    if (quoted && !line.includes("→")) {
+      items.push({ name: quoted[1], note: line.replace(quoted[0], " ").replace(/\s+/g, " ").trim().slice(0, 80), dayKey: contextDay, slot: "any", kind: "other", cityHint: contextCity, queryJa: "" });
+      return;
+    }
+    // “札幌站→时计台→大通公园（夜景）”：每一站一条，括号里的当作特点；第一站前面的交通说明（“JR至小樽，”）去掉。
+    if (line.includes("→")) {
+      const stops = line.split(/→/);
+      // “札幌→旭川，……”：两个城市之间的移动是交通安排，整行放进其他备忘。
+      if (memoStayPrefecture(stops[0].split(/[，,：:]/).pop()) && memoStayPrefecture(stops[1].split(/[，,。]/)[0])) { notes.push(line); return; }
+      for (const stop of stops) {
+        const match = /^([^（(]+)(?:[（(]([^）)]*)[）)])?/.exec(stop.split(/[。！!]/)[0].replace(/[，,]+$/, "").split(/[，,]/).pop().trim());
+        const stopName = (match?.[1] || "").replace(/^(?:步行|公交|坐车|乘车)?(?:至|到)/, "").trim();
+        if (!stopName || stopName.length > 16 || /\d{1,2}[:：]\d{2}/.test(stopName)) continue;
+        items.push({ name: stopName.slice(0, 60), note: (match?.[2] || "").slice(0, 80), dayKey: contextDay, slot: "any", kind: "other", cityHint: contextCity, queryJa: "" });
+      }
+      return;
+    }
     const day = memoResolveDay(line, todayIso);
     if (day.matched) line = line.replace(day.matched, " ").trim();
     const slot = memoResolveSlot(line);
     // 时段写在开头才当作安排去掉；写在特点里（“晚上去人少”）保留原话。
     if (slot.matched && line.replace(/^[\s，,：:、]+/, "").startsWith(slot.matched)) line = line.replace(slot.matched, " ").trim();
     line = line.replace(/^[\s，,：:、]+|[\s，,、]+$/g, "");
-    if (!line) { if (day.dayKey) contextDay = day.dayKey; continue; }
+    if (!line) { if (day.dayKey) contextDay = day.dayKey; return; }
     const heading = /^(.{1,12})[：:]$/.exec(line);
-    if (heading) { contextCity = heading[1].trim(); if (day.dayKey) contextDay = day.dayKey; continue; }
-    if (/^(?:记得|别忘|要买|买|换|带|订|预约|提醒)/.test(line) && !/(?:店|馆|寺|神社|公园)$/.test(line)) { notes.push(rawLine.trim()); continue; }
+    if (heading) { contextCity = heading[1].trim(); if (day.dayKey) contextDay = day.dayKey; return; }
+    if (/^(?:记得|别忘|要买|买|换|带|订|预约|提醒)/.test(line) && !/(?:店|馆|寺|神社|公园)$/.test(line)) { notes.push(rawLine.trim()); return; }
     let name = line;
     let note = "";
     const split = /^(.+?)(?:[，,：:]|\s{2,}|\s[-—]\s)(.+)$/.exec(line);
@@ -127,13 +160,28 @@ function memoLocalParse(text, todayIso) {
     for (const part of name.split(/[、]/).map((value) => value.trim()).filter(Boolean)) {
       items.push({ name: part.slice(0, 60), note: note.slice(0, 80), dayKey: day.dayKey || contextDay, slot: slot.slot, kind: "other", cityHint: contextCity, queryJa: "" });
     }
-  }
-  return { items: items.slice(0, 30), notes: notes.slice(0, 12) };
+  });
+  return { items: items.slice(0, MEMO_MAX_ITEMS), notes: notes.slice(0, 20) };
 }
 
 // 粘贴的文字里常带小红书或谷歌地图的链接。链接里的内容读不到，也不是地点，先去掉。
+// Markdown 写法的链接（“[#北海道攻略](https://…)”）保留方括号里的字，只去掉网址。
 function memoStripLinks(text) {
-  return String(text || "").replace(/https?:\/\/[^\s，。、；;）)】]+/gi, " ");
+  return String(text || "").replace(/\[([^\]\n]{0,80})\]\(\s*https?:\/\/[^)\s]*\s*\)/gi, "$1").replace(/https?:\/\/[^\s，。、；;）)】]+/gi, " ");
+}
+
+// 表情符号不是地名的一部分。
+function memoStripEmoji(text) {
+  return String(text || "").replace(/[\p{Extended_Pictographic}\uFE0F\u20E3\u200D]/gu, "");
+}
+
+// “Day1️⃣ 札幌经典Citywalk”“第2天：小樽”这种以“第几天”开头的小标题：它下面的各行都算这一天，直到下一个小标题。
+// 只认行首，免得“11/21 镰仓”这种写在地点旁边的日期被当成小标题。
+function memoDayHeading(line, todayIso) {
+  const text = memoStripEmoji(line).replace(/^[\s\p{P}\p{S}]+/u, "");
+  if (!/^(?:day|d)\s*\d|^第\s*[\d一二两三四五六七八九十]/i.test(text)) return "";
+  const day = memoResolveDay(text, todayIso);
+  return day.dayKey.startsWith("day-") && text.indexOf(day.matched) === 0 ? day.dayKey : "";
 }
 
 // ===================== 地理：县的远近、住宿城市、大城市的片区 =====================

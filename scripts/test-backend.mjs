@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const [catalog, shared, runtime] = await Promise.all([readFile(resolve(root, "data/catalog.json"), "utf8"), readFile(resolve(root, "shared/memo.js"), "utf8"), readFile(resolve(root, "worker/runtime.js"), "utf8")]);
-const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights"];
+const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights", "memoDayHeading", "MEMO_MAX_ITEMS"];
 const dir = await mkdtemp(join(tmpdir(), "tabi-test-"));
 const file = join(dir, "runtime.mjs");
 await writeFile(file, `const ASSETS = {};\nconst CATALOG = ${catalog};\n${shared}\n${runtime}\nexport { ${names.join(", ")} };`);
@@ -415,5 +415,53 @@ test("模型编排的校验：排到离住处远的日子、和当天其他县�
   assert.deepEqual(plan.assign, { t1: "day-1" }, "京都排在住东京的日子、大阪和镰仓同一天，都不采用");
   assert.notEqual(plan.reasons["day-1"], "x", "组被截短后，理由按实际内容重新生成");
   assert.deepEqual(plan.left.map((entry) => entry.id).sort(), ["k1", "o1"]);
+});
+// 仿照小红书多日攻略的写法（自己写的示例，不是原帖）：标题、Day 小标题、→ 路线、Tips、话题标签。
+const XHS_POST = `北海道四天｜冬季雪景之旅❄️附攻略
+时间紧张的可以参考
+
+Day1️⃣ 札幌城市漫步
+东京早班机飞新千岁，直奔札幌
+🚶‍♀️路线：札幌站→时计台→大通公园→电视塔（夜景机位）
+🍴美食：狸小路「某某鲜鱼店」海鲜丼
+
+Day2️⃣ 小樽运河
+🚊JR至小樽，八音盒博物馆→小樽运河→天狗山（缆车看日落）
+
+Day 3 函馆夜景
+金森红砖仓库→八幡坂（看海）→函馆山
+📌Tips：五稜郭附近有大型无印良品。
+
+第4天 返程
+上午五稜郭塔，晚班机回东京
+
+🌟冬季必备：保暖衣物+冰爪
+[#北海道攻略](https://www.xiaohongshu.com/search_result?keyword=%25E5%258C%2597&type=54) [#札幌](https://www.xiaohongshu.com/search_result?keyword=%25E6%259C%25AD&type=54)`;
+
+test("小红书攻略：Day 小标题认成第几天，只认行首", () => {
+  assert.equal(t.memoDayHeading("Day1️⃣ 札幌城市漫步", "2026-11-19"), "day-1");
+  assert.equal(t.memoDayHeading("Day 3 函馆夜景", "2026-11-19"), "day-3");
+  assert.equal(t.memoDayHeading("第4天 返程", "2026-11-19"), "day-4");
+  assert.equal(t.memoDayHeading("📅 D2：小樽", "2026-11-19"), "day-2");
+  assert.equal(t.memoDayHeading("11/21 镰仓", "2026-11-19"), "", "写在地点旁边的日期不是小标题");
+  assert.equal(t.memoDayHeading("Dior 2 号店", "2026-11-19"), "");
+});
+test("小红书攻略：模型认出的地点按所在的 Day 小标题定日期", () => {
+  const parsed = { items: ["札幌站", "时计台", "电视塔", "小樽运河", "天狗山", "金森红砖仓库", "函馆山", "五稜郭塔"].map((name) => ({ name, note: "", date_text: "", kind: "attraction" })) };
+  const days = Object.fromEntries(t.normalizeMemoItems(parsed, XHS_POST, "2026-11-19").items.map((item) => [item.name, item.dayKey]));
+  assert.deepEqual(days, { 札幌站: "day-1", 时计台: "day-1", 电视塔: "day-1", 小樽运河: "day-2", 天狗山: "day-2", 金森红砖仓库: "day-3", 函馆山: "day-3", 五稜郭塔: "day-4" });
+});
+test("小红书攻略：链接去掉后保留话题文字；本地规则也能按 Day 拆", () => {
+  assert.equal(t.memoStripLinks("[#札幌](https://www.xiaohongshu.com/search_result?keyword=a&type=54)").trim(), "#札幌");
+  const parsed = t.memoLocalParse(XHS_POST, "2026-11-19");
+  const byName = Object.fromEntries(parsed.items.map((item) => [item.name, item]));
+  for (const name of ["札幌站", "时计台", "大通公园", "电视塔", "八音盒博物馆", "小樽运河", "金森红砖仓库", "八幡坂", "函馆山"]) assert.ok(byName[name], `本地规则应拆出“${name}”：${parsed.items.map((item) => item.name).join("、")}`);
+  assert.equal(byName["时计台"].dayKey, "day-1");
+  assert.equal(byName["小樽运河"].dayKey, "day-2");
+  assert.equal(byName["函馆山"].dayKey, "day-3");
+  assert.equal(byName["电视塔"].note, "夜景机位", "括号里的话当作特点");
+  assert.ok(parsed.items.every((item) => !/^#|Day|❄|🚶|📌|Tips|北海道四天/.test(item.name)), `不应出现标题、小标题、话题标签或表情：${parsed.items.map((item) => item.name).join("、")}`);
+  assert.ok(parsed.notes.some((note) => note.startsWith("Tips")), "Tips 归到其他备忘");
+  assert.equal(t.MEMO_MAX_ITEMS, 30);
 });
 console.log(`Backend unit tests passed (${count})`);
