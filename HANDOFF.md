@@ -70,7 +70,7 @@ Shao 的记录习惯，是输入设计的依据：
 
 - Tavily 免费额度每月有限，2026 年 11 月的额度在开发测试中用掉了大部分。**跑会联网的评测或演示之前，先告诉 Shao 大概要用多少次，得到同意再跑。** 优先用不联网的测试；`npm run eval:arrange` 不用 Tavily。
 - `workers.dev` 域名在中国大陆访问不稳定（未专门核实）。想让国内直接打开需要绑定自己的域名。
-- 仓库里的 `wrangler.jsonc` 没有写 KV 的 ID；Shao 本机部署用的那份被 Cloudflare 写入了 ID。两者都能部署到同一个存储空间。
+- `wrangler.jsonc` 已写死线上 KV 的 ID（`tabi-memo-tabi-kv`），从任何地方部署都用同一个存储空间。Shao 本机那份如果和仓库不同，以仓库为准。
 
 - 编排没有坐标，不知道真实路程。同一天内的先后顺序只按时段和“同区挨在一起”，不是最短路线；真实路程靠“当天路线地图”链接去看。
 - “当天路线地图”用的是谷歌地图，在中国大陆打不开，到日本后可用。
@@ -149,7 +149,12 @@ Shao 的电脑是 Windows，Node 通过 fnm 安装，每个新开的 PowerShell 
 
 ### 部署
 
-线上版本从 Shao 的电脑部署（需要他的 Cloudflare 登录）：在项目目录执行 `npm run deploy`。密钥已经保存在 Cloudflare 上，不需要再带。合并到 `main` 不会自动更新线上版本。
+线上版本有两种部署方式，都只在改动合并到 `main` 之后、从 `main` 部署：
+
+- Shao 的电脑：在项目目录执行 `npm run deploy`（需要他的 Cloudflare 登录）。
+- Claude Code 网页版的云端环境 `tabi-solo-japan`（2026-11-19 建立）：环境里存了一个“Edit Cloudflare Workers”权限的 Cloudflare 令牌（有过期时间，到期需在 Cloudflare 后台重建并重新填入），网络只放行 `api.cloudflare.com` 和线上网站。部署命令：`WRANGLER_SEND_METRICS=false CLOUDFLARE_API_TOKEN=proxy-injected npx wrangler deploy`（令牌由环境的网络代理注入，变量里只放占位值）。
+
+模型和搜索的密钥保存在 Cloudflare 上，部署时不需要再带。合并到 `main` 不会自动更新线上版本。
 
 ## 八、协作约定
 

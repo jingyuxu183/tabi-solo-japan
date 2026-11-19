@@ -7,8 +7,8 @@
   "build": { "command": "node scripts/build.mjs" },
   // 页面、样式、图片由 Cloudflare 直接提供；只有 /api/* 会运行 Worker
   "assets": { "directory": "./dist/public" },
-  // 位置缓存与每日联网额度计数。不写 id：第一次部署时自动创建
-  "kv_namespaces": [{ "binding": "TABI_KV" }],
+  // 位置缓存与每日额度计数。id 是线上那个存储空间（tabi-memo-tabi-kv），写死在这里，从任何电脑部署都用同一个
+  "kv_namespaces": [{ "binding": "TABI_KV", "id": "8dc5c757ae8741e38afb057bfc4c1207" }],
   // 每个 IP 每分钟最多 20 次接口请求
   "ratelimits": [{ "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } }],
   // DAILY_SEARCH_LIMIT：所有访客每天合计最多联网搜索多少次。平时 30 次/天约等于每月 900 次，对应 Tavily 免费额度；
