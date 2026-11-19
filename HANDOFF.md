@@ -149,12 +149,13 @@ Shao 的电脑是 Windows，Node 通过 fnm 安装，每个新开的 PowerShell 
 
 ### 部署
 
-线上版本有两种部署方式，都只在改动合并到 `main` 之后、从 `main` 部署：
+**合并到 `main` 即自动部署**（2026-11-19 起）：Cloudflare 的 Workers Builds 已连接 GitHub 仓库，生产分支 `main`，构建命令 `npm run build`，部署命令 `npx wrangler deploy`。所以合并前要确认改动可以直接上线；合并请求里写明部署后要检查什么，部署后由 Claude 打开线上网站检查。
 
-- Shao 的电脑：在项目目录执行 `npm run deploy`（需要他的 Cloudflare 登录）。
-- Claude Code 网页版的云端环境 `tabi-solo-japan`（2026-11-19 建立）：环境里存了一个“Edit Cloudflare Workers”权限的 Cloudflare 令牌（有过期时间，到期需在 Cloudflare 后台重建并重新填入），网络只放行 `api.cloudflare.com` 和线上网站。部署命令：`WRANGLER_SEND_METRICS=false CLOUDFLARE_API_TOKEN=proxy-injected npx wrangler deploy`（令牌由环境的网络代理注入，变量里只放占位值）。
+- 构建记录在 Cloudflare 后台：Workers & Pages → `tabi-memo` → Deployments / Builds。构建失败时线上保持上一版。
+- 手动部署的后备办法：Shao 的电脑上在项目目录执行 `npm run deploy`（需要他的 Cloudflare 登录）。
+- 在 Claude Code 云端环境里直接跑 `wrangler deploy` **行不通**：环境的网络代理会给所有发往 `api.cloudflare.com` 的请求套上存好的令牌，把上传页面文件时用的临时凭证覆盖掉，返回 401（2026-11-19 实测）。云端环境 `tabi-solo-japan` 只用来打开线上网站做检查。
 
-模型和搜索的密钥保存在 Cloudflare 上，部署时不需要再带。合并到 `main` 不会自动更新线上版本。
+模型和搜索的密钥保存在 Cloudflare 上，部署时不需要再带。
 
 ## 八、协作约定
 

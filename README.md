@@ -133,10 +133,14 @@ npm run eval:arrange  # 编排（没设密钥时只评测规则版）
 
 ## 部署
 
+Cloudflare 的 Workers Builds 连接了这个仓库：合并到 `main` 后自动构建并部署。
+
+第一次在新账号上部署，或需要手动部署时：
+
 ```bash
 npx wrangler login
 npx wrangler deploy --secrets-file .env.secrets   # 第一次：带上两把密钥
-npm run deploy                                     # 之后每次
+npm run deploy                                     # 之后手动部署
 ```
 
 `.env.secrets` 是两行 `名称=值`，部署后删除。密钥不要写进仓库。

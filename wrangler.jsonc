@@ -1,5 +1,5 @@
 {
-  // TABI 部署到 Cloudflare Workers 的配置。部署：npm run deploy
+  // TABI 部署到 Cloudflare Workers 的配置。合并到 main 后由 Workers Builds 自动部署；手动部署：npm run deploy
   "name": "tabi-memo",
   "main": "dist/server/index.js",
   "compatibility_date": "2026-11-16",
