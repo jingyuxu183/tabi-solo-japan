@@ -5,6 +5,7 @@
 - 在线版本：https://tabi-memo.shao-tabi.workers.dev （Cloudflare Workers，账号是 Shao 自己的）
 - 代码仓库：https://github.com/jingyuxu183/tabi-solo-japan ，`main` 是最新代码，也是今后的唯一来源
 - 面向外部读者的介绍在 `README.md`；这份文件是给接手开发的人或 AI 看的
+- 每个重要决定的来龙去脉在 `docs/DECISIONS.md`；给 Claude 的常驻规则在 `CLAUDE.md`
 
 ## 一、产品现在是什么
 
