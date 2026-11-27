@@ -244,3 +244,11 @@ fieldset.stays legend { padding: 0; font-size: 13px; color: var(--muted); }
 .note-source summary { cursor: pointer; width: fit-content; text-decoration: underline; text-underline-offset: 3px; }
 .note-source[open] summary { margin-bottom: 4px; }
 .notes li > .linkish { flex-shrink: 0; white-space: nowrap; }
+
+/* ---------- 挂在某天、某个地点下的备忘 ---------- */
+.day-memos { margin: 0; padding: 8px 14px; border: 1px solid var(--rule); border-top: 0; background: #f7f8f6; list-style: none; }
+.day-memos li, .item-tip { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14px; }
+.day-memos li + li { margin-top: 6px; }
+.day-memos .linkish, .item-tip .linkish { margin-left: auto; white-space: nowrap; font-size: 12px; }
+.item-tip { margin-top: 4px; color: var(--ink); }
+.note-body .linkish { margin-left: auto; white-space: nowrap; }

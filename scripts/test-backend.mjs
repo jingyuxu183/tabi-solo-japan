@@ -515,4 +515,25 @@ test("其他备忘：只留有用的；从叙述里总结的提醒必须出自�
     "叙述类型不要；数字原文没有的不要；和原句说的不是一件事的不要；原句不在用户文字里的不要");
   assert.equal(notes[0].source.includes("南海线人身事故"), true, "保留原句，页面上可以看原文");
 });
+test("其他备忘挂到对应的那一天或那个地点；英文词也只能来自原句", () => {
+  // “记得带伞”写在所有 Day 之前，不属于哪一天；写在某个 Day 下面的会算进那一天（和地点定日期同一套规则）。
+  const post = "记得带伞\n\nDay 5 京都 → 大阪\n下午转到大阪的民宿，方便次日游览神户。\n\n- \u200bDay 6 神户\n坐阪急电车去神户，涩谷SKY 要提前预约\n\nDay 7 返程\n最后一日奔赴大阪关西机场，当然还少不了经典的南海线人身事故";
+  const notes = t.normalizeMemoNotes([
+    { text: "改住大阪的民宿，方便去神户", kind: "stay", source: "下午转到大阪的民宿，方便次日游览神户。" },
+    { text: "坐阪急电车去神户", kind: "transport", source: "坐阪急电车去神户" },
+    { text: "涩谷SKY 要提前预约", kind: "booking", source: "涩谷SKY 要提前预约", place: "涩谷sky" },
+    { text: "提前预约门票", kind: "booking", source: "涩谷SKY 要提前预约", place: "东京塔" },
+    { text: "南海线可能因事故延误，去机场留足时间", kind: "tip", source: "最后一日奔赴大阪关西机场，当然还少不了经典的南海线人身事故" },
+    { text: "带伞", kind: "prepare", source: "记得带伞" },
+    { text: "大阪→神户：乘JR", kind: "transport", source: "下午转到大阪的民宿，方便次日游览神户。" },
+  ], post.replace(/\u200b/g, ""), "2026-11-27", ["涩谷SKY", "南京町"]);
+  assert.deepEqual(notes.map((note) => [note.text, note.dayKey, note.place]), [
+    ["改住大阪的民宿，方便去神户", "day-5", ""],
+    ["坐阪急电车去神户", "day-6", ""],
+    ["涩谷SKY 要提前预约", "", "涩谷SKY"],
+    ["提前预约门票", "day-6", ""],
+    ["南海线可能因事故延误，去机场留足时间", "day-7", ""],
+    ["带伞", "", ""],
+  ], "地点名不在这次认出的地点里就按天挂；原句没写 JR 的不要");
+});
 console.log(`Backend unit tests passed (${count})`);

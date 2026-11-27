@@ -1091,6 +1091,9 @@ function memoQuotedFrom(source, text) {
 function memoNoteGrounded(note, source) {
   const numbers = String(note).match(/\d+/g) || [];
   if (numbers.some((number) => !String(source).includes(number))) return false;
+  // 英文词（JR、Haruka 这类线路名）也只能来自原句：不能从“🚄”推出“JR”。
+  const words = String(note).match(/[A-Za-z]{2,}/g) || [];
+  if (words.some((word) => !String(source).toLowerCase().includes(word.toLowerCase()))) return false;
   const fold = (value) => foldText(value).replace(/[^\p{L}\p{N}]/gu, "");
   const a = fold(note);
   const b = fold(source);
@@ -1101,7 +1104,14 @@ function memoNoteGrounded(note, source) {
   return shared >= 2 && shared / Math.max(1, pairs.size) >= 0.2;
 }
 
-function normalizeMemoNotes(rawNotes, text) {
+// 这条备忘属于哪一天：找到原句所在的行，往上找最近的“Day N”小标题（和地点定日期用同一套规则）。
+function memoNoteDay(source, text, today) {
+  const clause = String(source).split(/[。！!？?；;，,\n]+/).map((value) => value.trim()).find((value) => value.length >= 4 && String(text).includes(value));
+  if (!clause) return "";
+  return memoLineDay(clause, text, today)?.dayKey || "";
+}
+
+function normalizeMemoNotes(rawNotes, text, today = "", itemNames = []) {
   const notes = [];
   const seen = new Set();
   for (const raw of Array.isArray(rawNotes) ? rawNotes : []) {
@@ -1114,7 +1124,10 @@ function normalizeMemoNotes(rawNotes, text) {
     const key = foldText(value);
     if (!value || !memoNoteGrounded(value, source) || seen.has(key)) continue;
     seen.add(key);
-    notes.push({ text: value, kind, source });
+    // 只和某一个地点有关的（“涩谷SKY 要提前预约”）挂到那个地点；地点名必须是这次认出来的。否则按原句的位置挂到那一天。
+    const placeKey = foldText(entry?.place);
+    const place = placeKey ? itemNames.find((name) => foldText(name) === placeKey) || "" : "";
+    notes.push({ text: value, kind, source, place, dayKey: place ? "" : memoNoteDay(source, text, today) });
   }
   return notes.slice(0, 20);
 }
@@ -1148,7 +1161,9 @@ function normalizeMemoItems(parsed, text, today) {
       queryJa: cleanText(raw?.query_ja, 80),
     });
   }
-  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes: normalizeMemoNotes(parsed?.notes, text) };
+  // notesDropped：模型给了、但没过检查的备忘条数，排查“某条备忘为什么没出现”时用。
+  const notes = normalizeMemoNotes(parsed?.notes, text, today, items.map((item) => item.name));
+  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes, notesDropped: (Array.isArray(parsed?.notes) ? parsed.notes.length : 0) - notes.length };
 }
 
 async function collectMemo(request, env) {
@@ -1179,6 +1194,7 @@ async function collectMemo(request, env) {
 - notes 是对这趟旅行有用的“其他备忘”，每条是一个对象 {"text","kind","source"}：
   - kind 只能是 transport（交通）、stay（住宿）、booking（要预约、买票）、prepare（出发前准备、带什么）、shopping（要买的东西）、tip（注意事项）。
   - source 是这条备忘依据的原句，从用户文字里逐字摘录，不要改动。
+  - place：这条备忘只和 items 里的某一个地点有关时（如“涩谷SKY 要提前预约”），填那个地点的 name，和 items 里写的一字不差；和一整天或整趟行程有关的（交通、换住处、装备）留空。
   - text 是写给旅行者看的一句话，最多 30 个字。用户自己写的待办（如“记得买 Suica”）原样照抄。别人的攻略或游记：交通、住宿安排精简成一句（如“关西机场→京都站：JR Haruka 约80分钟”）；叙述里有可以借鉴的经验时，总结成提醒（如原文写“去机场时遇到南海线人身事故，好在没有其他安排”，text 写“南海线可能因事故延误，去机场留足时间”）。
   - 只能用 source 里写到的事实：不得补充原文没有的时间、价格、班次、车站名；数字必须原文里有。
   - 纯粹的叙述、感想、夸赞（如“氛围感绝佳”“完美收官”），以及看完也不知道该做什么的句子，都不要放进 notes。
@@ -1187,7 +1203,7 @@ async function collectMemo(request, env) {
 - 用户没写的地点一个都不要加。
 
 只输出 JSON：
-{"items":[{"name":"Fuglen 咖啡","note":"澳白好喝","date_text":"11/20","slot":"any","city_hint":"","kind":"cafe","query_ja":"フグレン トウキョウ カフェ"}],"notes":[{"text":"记得买 Suica","kind":"prepare","source":"记得买 Suica"},{"text":"关西机场→京都站：JR Haruka 约80分钟","kind":"transport","source":"从关西机场搭乘 JR Haruka 特急列车直达京都站（约80分钟）"}]}`;
+{"items":[{"name":"Fuglen 咖啡","note":"澳白好喝","date_text":"11/20","slot":"any","city_hint":"","kind":"cafe","query_ja":"フグレン トウキョウ カフェ"}],"notes":[{"text":"记得买 Suica","kind":"prepare","source":"记得买 Suica","place":""},{"text":"关西机场→京都站：JR Haruka 约80分钟","kind":"transport","source":"从关西机场搭乘 JR Haruka 特急列车直达京都站（约80分钟）","place":""}]}`;
   let result;
   try { result = await callDeepSeekJson(env, { system, user: { memo_text: text }, maxTokens: 4000, temperature: 0.1, label: "DeepSeek memo collector" }); }
   catch (error) {
