@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const [catalog, shared, runtime] = await Promise.all([readFile(resolve(root, "data/catalog.json"), "utf8"), readFile(resolve(root, "shared/memo.js"), "utf8"), readFile(resolve(root, "worker/runtime.js"), "utf8")]);
-const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights", "memoDayHeading", "MEMO_MAX_ITEMS"];
+const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights", "memoDayHeading", "MEMO_MAX_ITEMS", "memoFindPlaceIn", "memoCityLevel"];
 const dir = await mkdtemp(join(tmpdir(), "tabi-test-"));
 const file = join(dir, "runtime.mjs");
 await writeFile(file, `const ASSETS = {};\nconst CATALOG = ${catalog};\n${shared}\n${runtime}\nexport { ${names.join(", ")} };`);
@@ -404,9 +404,10 @@ test("京都、大阪按片区分组，其他城市不变", () => {
   assert.notEqual(key("京都市", "伏见稻荷"), key("京都市", "岚山"));
   assert.equal(key("京都市", "祇园"), key("京都市", "清水寺"));
   assert.equal(key("京都市", "", "% Arabica 岚山"), key("京都市", "嵯峨野"), "街区没写时看地点名");
-  assert.equal(key("京都市", "某个没收录的地方"), "京都府|京都市", "认不出片区的按整个市算");
+  assert.equal(key("京都市", "某个没收录的地方"), "京都府|京都", "认不出片区的按整个市算");
   assert.notEqual(t.memoCityKey({ prefecture: "大阪府", city: "大阪市", area: "梅田" }), t.memoCityKey({ prefecture: "大阪府", city: "大阪市", area: "难波" }));
-  assert.equal(t.memoCityKey({ prefecture: "东京都", city: "涩谷区", area: "原宿" }), "东京都|涩谷区");
+  assert.equal(t.memoCityKey({ prefecture: "东京都", city: "涩谷区", area: "原宿" }), "东京都|涩谷");
+  assert.equal(t.memoCityKey({ prefecture: "北海道", city: "小樽" }), t.memoCityKey({ prefecture: "北海道", city: "小樽市" }), "按文字定到的“小樽”和查到的“小樽市”算同一处");
 });
 test("模型编排的校验：排到离住处远的日子、和当天其他县不相邻的，都不采用", () => {
   const items = [P("t1", "东京都", "涩谷区", ""), P("k1", "京都府", "京都市", "祇园"), P("km", "神奈川县", "镰仓市", "", { dayKey: "day-3" }), P("o1", "大阪府", "大阪市", "难波")];
@@ -463,5 +464,27 @@ test("小红书攻略：链接去掉后保留话题文字；本地规则也能�
   assert.ok(parsed.items.every((item) => !/^#|Day|❄|🚶|📌|Tips|北海道四天/.test(item.name)), `不应出现标题、小标题、话题标签或表情：${parsed.items.map((item) => item.name).join("、")}`);
   assert.ok(parsed.notes.some((note) => note.startsWith("Tips")), "Tips 归到其他备忘");
   assert.equal(t.MEMO_MAX_ITEMS, 30);
+});
+test("城市提示必须出现在用户的文字里，模型补的不算", () => {
+  const parsed = { items: [{ name: "Fuglen 咖啡", city_hint: "东京" }, { name: "小樽运河", city_hint: "小樽" }] };
+  const items = t.normalizeMemoItems(parsed, "Fuglen 咖啡 澳白好喝\n小樽：小樽运河", "2026-11-27").items;
+  assert.equal(items[0].cityHint, "", "原文没写东京，不能当城市");
+  assert.equal(items[1].cityHint, "小樽");
+});
+test("在文字里找已知地名；按文字定到城市的规则", () => {
+  assert.equal(t.memoFindPlaceIn("Day3️⃣ 小樽雪海列车+天狗山日落"), "小樽");
+  assert.equal(t.memoFindPlaceIn("东京都内一日游"), "东京", "不会把“东京都”认成“京都”");
+  assert.equal(t.memoFindPlaceIn("随便逛逛"), "");
+  const city = (extra) => t.memoCityLevel({ id: "a", name: "某处", kind: "other", cityHint: "", ...extra });
+  assert.deepEqual([city({ cityHint: "小樽" }).prefecture, city({ cityHint: "小樽" }).city], ["北海道", "小樽"]);
+  assert.deepEqual([city({ name: "下北泽" }).prefecture, city({ name: "下北泽" }).city], ["东京都", "下北泽"], "地点名本身就是街区");
+  assert.equal(city({ cityHint: "某个小村" }), null, "认不出的城市照常联网查");
+  assert.equal(city({ name: "Fuglen 咖啡" }), null);
+  assert.equal(city({ cityHint: "小樽", precise: true }), null, "要精确位置时不走这条路");
+  assert.equal(city({ cityHint: "北海道" }).city, "", "只写了县的，只定到县");
+});
+test("本地规则：Day 小标题里的城市作为下面各行的城市", () => {
+  const items = t.memoLocalParse("Day1 札幌漫步\n时计台→大通公园\nDay2 小樽运河一日\n八音盒博物馆→北一硝子", "2026-11-27").items;
+  assert.deepEqual(items.map((item) => [item.name, item.cityHint]), [["时计台", "札幌"], ["大通公园", "札幌"], ["八音盒博物馆", "小樽"], ["北一硝子", "小樽"]]);
 });
 console.log(`Backend unit tests passed (${count})`);

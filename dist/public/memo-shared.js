@@ -112,7 +112,7 @@ function memoLocalParse(text, todayIso) {
     if (!line || (firstHeading > 0 && lineIndex < firstHeading)) return;
     // 小红书攻略里的“Day1 标题”：只决定下面几行是哪一天，标题本身不是地点。
     const headingDay = memoDayHeading(line, todayIso);
-    if (headingDay) { contextDay = headingDay; contextCity = ""; return; }
+    if (headingDay) { contextDay = headingDay; contextCity = memoFindPlaceIn(line.replace(/^\D*\d+/, "")); return; }
     // 话题标签、“Tips：”“交通：”这类说明、坐飞机坐车的安排，都不是地点。
     if (/^#/.test(line)) return;
     if (/^(?:tips|攻略|交通|必备|冬季必备|注意|提示|备注)\s*[：:]/i.test(line) || /(?:班机|航班|飞往|新干线|直奔)/.test(line)) { notes.push(line); return; }
@@ -241,6 +241,19 @@ function memoStayPrefecture(value) {
   return "";
 }
 
+// 在一段文字里找出最先出现的已知地名（城市、街区或县）：“Day3 小樽雪海列车”→“小樽”。
+// 同一位置有多个候选时取最长的（“东京都”里先认“东京”，不会认成“京都”）。
+function memoFindPlaceIn(text) {
+  const value = toSimplified(String(text || ""));
+  let best = null;
+  for (const name of MEMO_STAY_MAP.keys()) {
+    if (name.length < 2) continue;
+    const at = value.indexOf(name);
+    if (at >= 0 && (!best || at < best.at || (at === best.at && name.length > best.name.length))) best = { name, at };
+  }
+  return best ? best.name : "";
+}
+
 // 大城市只按“市”分组太粗：京都的岚山和伏见稻荷在两个方向。这两个城市再按片区分。
 // 片区按街区名或地点名里的关键词认；认不出的仍按整个市算。
 const MEMO_CITY_ZONES = {
@@ -317,9 +330,11 @@ function memoAlignDayKey(rawTrip, dayKey) {
   return memoIso(new Date(start.getTime() + (Number(match[1]) - 1) * 86400000));
 }
 
+// 分组用的“市/区”：去掉“市、区、町、村”再比，按文字定到城市的“小樽”和联网查到的“小樽市”算同一处。
 function memoCityKey(item) {
   const zone = memoCityZone(item);
-  return `${item.prefecture || ""}|${item.city || item.area || ""}${zone ? `|${zone}` : ""}`;
+  const city = toSimplified(String(item.city || item.area || "")).replace(/(?:市|区|町|村)$/, "");
+  return `${item.prefecture || ""}|${city}${zone ? `|${zone}` : ""}`;
 }
 
 // 这一天住的城市附近（同县、相邻或隔一个县）才排。没写住哪、或写的城市认不出时，不限制。

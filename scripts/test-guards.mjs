@@ -1,4 +1,5 @@
-// 公开部署保护的离线测试：限流、每日联网额度、每日 AI 次数、位置缓存。
+// 公开部署保护的离线测试：限流、每日联网额度、每日 AI 次数、位置缓存、按文字定到城市。
+// 缓存相关的测试用“甲町”这种表里没有的地名，免得被“按文字定到城市”提前接住。
 // 用假的搜索与模型响应，不联网、不需要密钥、不消耗任何额度。
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -45,11 +46,11 @@ const test = async (name, fn) => { try { await fn(); count += 1; } catch (error)
 await test("位置缓存：查过的地点第二次不再联网", async () => {
   const env = { TABI_KV: fakeKv() };
   calls.tavily = 0; calls.deepseek = 0;
-  const first = await locate(env, [item("a", "甲咖啡"), item("b", "乙咖啡", "涩谷")]);
+  const first = await locate(env, [item("a", "甲咖啡"), item("b", "乙咖啡", "甲町")]);
   assert.equal(first.status, 200);
   assert.deepEqual(first.data.results.map((r) => r.status), ["located", "located"]);
   assert.equal(calls.tavily, 2);
-  const second = await locate(env, [item("x1", "甲咖啡"), item("x2", "乙咖啡", "涩谷")]);
+  const second = await locate(env, [item("x1", "甲咖啡"), item("x2", "乙咖啡", "甲町")]);
   assert.equal(calls.tavily, 2, "第二次不应再搜索");
   assert.equal(calls.deepseek, 1, "第二次也不应再调用模型");
   assert.equal(second.data.cachedCount, 2);
@@ -57,7 +58,7 @@ await test("位置缓存：查过的地点第二次不再联网", async () => {
   const mixed = await locate(env, [item("y1", "甲咖啡"), item("y2", "丙咖啡")]);
   assert.equal(calls.tavily, 3, "只为没查过的那一处联网");
   assert.deepEqual(mixed.data.results.map((r) => r.id), ["y1", "y2"], "结果顺序与请求一致");
-  const other = await locate(env, [item("z", "乙咖啡", "新宿")]);
+  const other = await locate(env, [item("z", "乙咖啡", "乙町")]);
   assert.equal(calls.tavily, 4, "同名但城市不同，算另一个地点");
   assert.equal(other.status, 200);
 });
@@ -160,5 +161,26 @@ await test("位置不对：重新查时跳过缓存；这次没查到，就删�
     assert.equal(again.data.results[0].status, "unverified");
     assert.equal(kv.store.has(cacheKey), false, "错的旧结论被删掉");
   } finally { globalThis.fetch = realFetch; }
+});
+await test("按文字定到城市：写了已知城市的不联网、不调用模型、不占额度", async () => {
+  const kv = fakeKv();
+  calls.tavily = 0; calls.deepseek = 0;
+  const result = await locate({ TABI_KV: kv, DAILY_SEARCH_LIMIT: "1" }, [item("a", "小樽运河", "小樽"), item("b", "镰仓"), item("c", "某个温泉", "北海道")]);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.data.results.map((r) => [r.id, r.status, r.precision, r.prefecture, r.city]), [["a", "located", "city", "北海道", "小樽"], ["b", "located", "city", "神奈川县", "镰仓"], ["c", "located", "city", "北海道", ""]]);
+  assert.equal(calls.tavily, 0);
+  assert.equal(calls.deepseek, 0);
+  assert.equal(kv.store.get(`searches:${todayKey()}`), undefined, "没有扣搜索额度");
+  assert.equal(kv.store.get(`ai:${todayKey()}`), undefined, "没有扣 AI 次数");
+});
+await test("按文字定到城市：只为看不出在哪的那几处联网；要精确位置时照常联网", async () => {
+  calls.tavily = 0;
+  const mixed = await locate({ TABI_KV: fakeKv() }, [item("a", "小樽运河", "小樽"), item("b", "戊咖啡")]);
+  assert.equal(calls.tavily, 1, "只搜没写城市的那一处");
+  assert.deepEqual(mixed.data.results.map((r) => r.id), ["a", "b"]);
+  calls.tavily = 0;
+  const precise = await locate({ TABI_KV: fakeKv() }, [{ ...item("a", "小樽运河", "小樽"), precise: true }]);
+  assert.equal(calls.tavily, 1, "点了“查具体位置”就联网");
+  assert.notEqual(precise.data.results[0].precision, "city");
 });
 console.log(`Deploy guard tests passed (${count})`);

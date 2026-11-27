@@ -1058,6 +1058,24 @@ function memoLineDay(name, text, today) {
   return { dayKey: "", matched: "" };
 }
 
+function memoHintInText(hint, text) {
+  const value = foldText(hint);
+  return value.length >= 2 && foldText(text).includes(value) ? hint : "";
+}
+
+// 按用户写的文字定位到城市一级，不联网：写了城市（cityHint），或地点名本身就是已知的城市、街区。
+// 只给县和市，不给街区和资料来源；用户要精确位置时再联网查（precise）。
+function memoCityLevel(item) {
+  if (item.fresh || item.precise) return null;
+  let place = memoStayPrefecture(item.cityHint) ? item.cityHint : "";
+  if (!place && memoStayPrefecture(item.name)) place = item.name;
+  if (!place) return null;
+  const prefecture = displayPrefecture(memoStayPrefecture(place));
+  if (!prefecture) return null;
+  const isPrefecture = memoPrefKey(place) === memoPrefKey(prefecture);
+  return { id: item.id, status: "located", precision: "city", localName: "", prefecture, region: regionOfPrefecture(prefecture), city: isPrefecture ? "" : toSimplified(place), area: "", kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", summary: "", chain: false, sources: [], verificationStatus: "text" };
+}
+
 function normalizeMemoItems(parsed, text, today) {
   const items = [];
   const seen = new Set();
@@ -1082,7 +1100,8 @@ function normalizeMemoItems(parsed, text, today) {
       dayKey: day.dayKey,
       slot,
       kind: MEMO_KINDS.has(raw?.kind) ? raw.kind : "other",
-      cityHint: cleanText(raw?.city_hint, 30),
+      // 城市也必须是用户自己写的：后面会直接按它定位，不能让模型凭常识补一个城市。
+      cityHint: memoHintInText(cleanText(raw?.city_hint, 30), text),
       queryJa: cleanText(raw?.query_ja, 80),
     });
   }
@@ -1173,20 +1192,27 @@ function resolveLocatedItem(item, raw, sources) {
 
 async function locateMemo(request, env) {
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-  if (!env.TAVILY_API_KEY) return json({ error: "联网搜索服务尚未配置", code: "SEARCH_NOT_CONFIGURED" }, 503);
-  if (!env.DEEPSEEK_API_KEY) return json({ error: "AI 服务尚未配置", code: "AI_NOT_CONFIGURED" }, 503);
   if (await overLimit(request, env, "locate", 12)) return json({ error: "请求过于频繁，请稍后再试" }, 429);
   let input;
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
   const validationError = validateLocateInput(input);
   if (validationError) return json({ error: validationError }, 400);
-  const allItems = input.items.map((item) => ({ id: item.id, name: cleanText(item.name, 60), note: cleanText(item.note, 80), kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", cityHint: cleanText(item.cityHint, 30), queryJa: cleanText(item.queryJa, 80), fresh: item.fresh === true }));
+  const allItems = input.items.map((item) => ({ id: item.id, name: cleanText(item.name, 60), note: cleanText(item.note, 80), kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", cityHint: cleanText(item.cityHint, 30), queryJa: cleanText(item.queryJa, 80), fresh: item.fresh === true, precise: item.precise === true }));
   // 先看缓存：查过的地点直接返回，只有没查过的才联网。用户点了“位置不对”的（fresh）不读缓存，重新查。
   const cachedResults = await Promise.all(allItems.map((item) => (item.fresh ? null : readLocateCache(env, item))));
   const cachedById = new Map(allItems.map((item, index) => [item.id, cachedResults[index]]).filter(([, value]) => value));
+  // 再看文字：写了城市的先定到城市一级，不联网、不调用模型、不占额度。
+  for (const item of allItems) {
+    if (cachedById.has(item.id)) continue;
+    const cityLevel = memoCityLevel(item);
+    if (cityLevel) cachedById.set(item.id, cityLevel);
+  }
   const items = allItems.filter((item) => !cachedById.has(item.id));
   const merge = (fresh) => allItems.map((item) => cachedById.get(item.id) || fresh.get(item.id));
   if (!items.length) return json({ results: merge(new Map()), sourceCount: 0, cachedCount: cachedById.size });
+  // 还剩要联网查的，才需要搜索和模型；没配置时把已经定好的那些一起返回。
+  if (!env.TAVILY_API_KEY) return json({ error: "联网搜索服务尚未配置", code: "SEARCH_NOT_CONFIGURED", results: [...cachedById.values()] }, 503);
+  if (!env.DEEPSEEK_API_KEY) return json({ error: "AI 服务尚未配置", code: "AI_NOT_CONFIGURED", results: [...cachedById.values()] }, 503);
   // 先扣 AI 次数再扣搜索：AI 次数不够时不应白白用掉搜索额度。
   if (!(await spendAiCalls(env, 1))) {
     return json({ ...AI_BUDGET_ERROR, error: "今天的 AI 使用次数用完了，位置明天再查；地点已经记下，不影响排日期。", results: [...cachedById.values()] }, 429);

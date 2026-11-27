@@ -189,7 +189,11 @@ function mapUrl(item) {
 
 function whereHtml(item, { showDay }) {
   const parts = [];
-  if (item.status === "located") parts.push(`<span class="place" style="--line:${REGION_COLORS[item.region] || "#8a979b"}">${escapeHtml(placeText(item, !showDay))}</span>`);
+  if (item.status === "located") {
+    parts.push(`<span class="place" style="--line:${REGION_COLORS[item.region] || "#8a979b"}">${escapeHtml(placeText(item, !showDay))}</span>`);
+    // 按用户写的城市定位的：说明来历，需要街区和资料来源时再联网查。
+    if (item.precision === "city") parts.push(`<span class="tag">按你写的城市</span><button class="linkish" type="button" data-precise="${item.id}">查具体位置</button>`);
+  }
   else if (item.status === "pending" || item.status === "queued") parts.push('<span class="pending">正在查它在哪</span>');
   else if (item.status === "chain") parts.push("<span>连锁店，有多家分店。写上城市能查到具体哪一家</span>");
   else if (item.status === "outside_japan") parts.push("<span>看起来不在日本，先原样留着</span>");
@@ -564,34 +568,45 @@ async function postJson(path, body) {
   const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   let data = null;
   try { data = await response.json(); } catch { /* 静态托管没有接口时会拿到网页而不是 JSON */ }
-  if (!response.ok || !data) { const error = new Error(data?.error || "服务暂时不可用"); error.code = data?.code || `HTTP_${response.status}`; throw error; }
+  if (!response.ok || !data) { const error = new Error(data?.error || "服务暂时不可用"); error.code = data?.code || `HTTP_${response.status}`; error.data = data; throw error; }
   return data;
 }
 
-// fresh：用户说位置不对，让后端跳过缓存重新查。
-async function locate(ids, { fresh = false } = {}) {
+function applyLocateResults(results) {
+  for (const result of results || []) {
+    const item = state.items.find((entry) => entry.id === result.id);
+    if (!item) continue;
+    Object.assign(item, { status: result.status, precision: result.precision || "exact", localName: result.localName || "", prefecture: result.prefecture || "", city: result.city || "", area: result.area || "", region: result.region || "", summary: result.summary || "", chain: result.chain === true, sources: result.sources || [], verificationStatus: result.verificationStatus || "verify" });
+    if (result.kind && KIND_LABELS[result.kind] !== undefined && result.kind !== "other") item.kind = result.kind;
+  }
+}
+
+// fresh：用户说位置不对，让后端跳过缓存重新查。precise：只按城市定位过的，用户要联网查具体位置。
+async function locate(ids, { fresh = false, precise = false } = {}) {
   const targets = state.items.filter((item) => ids.includes(item.id));
   if (!targets.length) return;
+  // 按城市定位过的，联网没查到时退回原来的城市定位，不要把已知的城市也丢掉。
+  const before = new Map(targets.filter((item) => item.status === "located" && item.precision === "city").map((item) => [item.id, { ...item }]));
   for (const item of targets) item.status = "pending";
   update();
   const batches = [];
   for (let index = 0; index < targets.length; index += LOCATE_BATCH) batches.push(targets.slice(index, index + LOCATE_BATCH));
   await Promise.all(batches.map(async (batch) => {
     try {
-      const data = await postJson("/api/locate", { items: batch.map((item) => ({ id: item.id, name: item.name, note: item.note, kind: item.kind, cityHint: item.cityHint, queryJa: item.queryJa, fresh })) });
-      for (const result of data.results || []) {
-        const item = state.items.find((entry) => entry.id === result.id);
-        if (!item) continue;
-        Object.assign(item, { status: result.status, localName: result.localName || "", prefecture: result.prefecture || "", city: result.city || "", area: result.area || "", region: result.region || "", summary: result.summary || "", chain: result.chain === true, sources: result.sources || [], verificationStatus: result.verificationStatus || "verify" });
-        if (result.kind && KIND_LABELS[result.kind] !== undefined && result.kind !== "other") item.kind = result.kind;
-      }
+      const data = await postJson("/api/locate", { items: batch.map((item) => ({ id: item.id, name: item.name, note: item.note, kind: item.kind, cityHint: item.cityHint, queryJa: item.queryJa, fresh, precise: precise || fresh })) });
+      applyLocateResults(data.results);
       for (const item of batch) if (item.status === "pending") item.status = "unverified";
     } catch (error) {
+      // 出错时服务器也可能带回一部分结果（缓存里的、按城市定位的），先用上。
+      applyLocateResults(error.data?.results);
       for (const item of batch) if (item.status === "pending") item.status = "failed";
       if (error.code === "SEARCH_BUDGET" || error.code === "AI_BUDGET") locate.budgetMessage = error.message;
     }
     update();
   }));
+  const restored = targets.filter((item) => before.has(item.id) && item.status !== "located");
+  for (const item of restored) Object.assign(item, before.get(item.id));
+  if (restored.length) { update(); showToast(locate.budgetMessage || "没查到更具体的位置，先按你写的城市"); }
 }
 
 async function collect(event) {
@@ -632,10 +647,23 @@ async function collect(event) {
   const extra = [duplicates ? `${duplicates} 处已经在备忘里` : "", collected.truncated ? `一次最多整理 ${MEMO_MAX_ITEMS} 处，剩下的请再贴一次` : ""].filter(Boolean).join("；");
   setStatus(online ? `记下了 ${added.length} 处，正在查它们各在哪里。${extra}` : `AI 暂时用不了（${collect.failure}），先按本地规则记下了 ${added.length} 处，拆得会粗一些；位置等能联网时再查。${extra}`);
   update();
+  if (!online) {
+    // AI 不可用时，只把能看出城市的那几处交给服务器按城市定位（不联网、不调用模型）；其余留到以后再查，免得白白用掉搜索额度。
+    const cityIds = added.filter((item) => memoStayPrefecture(item.cityHint) || memoStayPrefecture(item.name)).map((item) => item.id);
+    if (cityIds.length) {
+      await locate(cityIds);
+      for (const item of added) if (cityIds.includes(item.id) && item.status !== "located") item.status = "offline";
+      update();
+      const byCity = added.filter((item) => item.status === "located").length;
+      if (byCity) setStatus(`AI 暂时用不了（${collect.failure}），先按本地规则记下了 ${added.length} 处，拆得会粗一些；其中 ${byCity} 处按你写的城市定了位置，其余等能联网时再查。${extra}`);
+    }
+  }
   if (online && added.length) {
     await locate(added.map((item) => item.id));
-    const located = added.filter((item) => item.status === "located").length;
-    setStatus(locate.budgetMessage ? `记下了 ${added.length} 处。${locate.budgetMessage}` : `记下了 ${added.length} 处，其中 ${located} 处查到了位置。${extra}`);
+    const byCity = added.filter((item) => item.status === "located" && item.precision === "city").length;
+    const searched = added.filter((item) => item.status === "located" && item.precision !== "city").length;
+    const where = [byCity ? `${byCity} 处按你写的城市定位` : "", searched ? `${searched} 处联网查到了位置` : ""].filter(Boolean).join("，") || "暂时都没查到位置";
+    setStatus(locate.budgetMessage ? `记下了 ${added.length} 处，${where}。${locate.budgetMessage}` : `记下了 ${added.length} 处：${where}。${extra}`);
     locate.budgetMessage = "";
   }
 }
@@ -767,7 +795,7 @@ $("#edit-delete").addEventListener("click", () => {
   showToast("已删除");
 });
 document.addEventListener("click", (event) => {
-  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-remove-note],[data-suggest],[data-nearby],[data-close]");
+  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-precise],[data-remove-note],[data-suggest],[data-nearby],[data-close]");
   if (!target) return;
   if (target.id === "load-example") loadExample();
   else if (target.dataset.nearby) { state.nearbyId = state.nearbyId === target.dataset.nearby ? null : target.dataset.nearby; render(); }
@@ -776,6 +804,7 @@ document.addEventListener("click", (event) => {
   else if (target.dataset.edit) openEdit(target.dataset.edit);
   else if (target.dataset.source) openSource(target.dataset.source);
   else if (target.dataset.relocate) locate([target.dataset.relocate]);
+  else if (target.dataset.precise) locate([target.dataset.precise], { precise: true });
   else if (target.dataset.removeNote) { state.notes = state.notes.filter((note) => note.id !== target.dataset.removeNote); update(); }
   else if (target.hasAttribute("data-close")) target.closest("dialog").close();
 });
