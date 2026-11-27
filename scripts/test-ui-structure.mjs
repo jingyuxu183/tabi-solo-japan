@@ -77,4 +77,6 @@ assert.match(homeJs, /fresh: wrong/, "位置不对时跳过缓存重新查");
 assert.match(homeJs, /memoStripLinks\(/, "只贴链接时直接提示");
 assert.match(homeJs, /data-precise=/, "按城市定位的地点可以再查具体位置");
 assert.match(homeJs, /按你写的城市/, "按城市定位的要说明来历");
+assert.match(homeJs, /#clear-confirm[^\n]*state\.trip = memoNormalizeTrip\(\{\}\)/, "清空时连行程设置一起清掉");
+assert.match(homeJs, /addCollected\(collected\);[\s\S]{0,200}alignToTrip\(\);/, "整理后马上把“第 N 天”换成行程里的日期");
 console.log("Memo home page structure is present");

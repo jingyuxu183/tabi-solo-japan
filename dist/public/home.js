@@ -73,6 +73,15 @@ function alignToTrip() {
   for (const item of state.items) item.dayKey = memoAlignDayKey(state.trip, item.dayKey);
 }
 
+// 攻略分的天数和行程设的天数对不上时提醒一句，不替用户改行程。
+function tripLengthHint(rawItems) {
+  const postDays = Math.max(0, ...rawItems.map((item) => Number(/^day-(\d+)$/.exec(item.dayKey || "")?.[1]) || 0));
+  if (postDays < 2) return "";
+  if (!state.trip.days) return `这篇攻略分成了 ${postDays} 天，可以在“行程”里设成 ${postDays} 天`;
+  if (postDays > state.trip.days) return `这篇攻略排了 ${postDays} 天，你的行程设的是 ${state.trip.days} 天，多出来的日子在行程之后`;
+  return "";
+}
+
 function tripSummary() {
   const trip = state.trip;
   if (!trip.days) return "设置出发日期和天数";
@@ -635,6 +644,8 @@ async function collect(event) {
   }
   const { added, duplicates } = addCollected(collected);
   if (!online) for (const item of added) item.status = "offline";
+  // 攻略里的“第 N 天”：设了出发日期的话，马上换成行程里的具体日期，和已有的日子排在一起。
+  alignToTrip();
   button.disabled = false;
   button.textContent = "整理进备忘";
   if (!added.length && !(collected.notes || []).length) {
@@ -644,7 +655,7 @@ async function collect(event) {
   }
   input.value = "";
   updateCount();
-  const extra = [duplicates ? `${duplicates} 处已经在备忘里` : "", collected.truncated ? `一次最多整理 ${MEMO_MAX_ITEMS} 处，剩下的请再贴一次` : ""].filter(Boolean).join("；");
+  const extra = [duplicates ? `${duplicates} 处已经在备忘里` : "", collected.truncated ? `一次最多整理 ${MEMO_MAX_ITEMS} 处，剩下的请再贴一次` : "", tripLengthHint(collected.items || [])].filter(Boolean).join("；");
   setStatus(online ? `记下了 ${added.length} 处，正在查它们各在哪里。${extra}` : `AI 暂时用不了（${collect.failure}），先按本地规则记下了 ${added.length} 处，拆得会粗一些；位置等能联网时再查。${extra}`);
   update();
   if (!online) {
@@ -766,7 +777,8 @@ $("#memo-input").addEventListener("input", updateCount);
 $("#fill-sample").addEventListener("click", () => { $("#memo-input").value = SAMPLE; updateCount(); $("#memo-input").focus(); });
 $("#copy-text").addEventListener("click", copyText);
 $("#clear-all").addEventListener("click", () => $("#clear-dialog").showModal());
-$("#clear-confirm").addEventListener("click", () => { state.items = []; state.notes = []; state.undo = null; $("#clear-dialog").close(); update(); setStatus(""); showToast("已清空"); });
+// 清空就是从头开始：地点、其他备忘，连同行程设置（出发日期、天数、每晚住哪）都清掉。
+$("#clear-confirm").addEventListener("click", () => { state.items = []; state.notes = []; state.undo = null; state.proposal = null; state.nearbyId = null; state.trip = memoNormalizeTrip({}); $("#clear-dialog").close(); update(); setStatus(""); showToast("已清空"); });
 $("#trip-edit").addEventListener("click", openTrip);
 $("#trip-form").addEventListener("submit", saveTrip);
 $("#trip-days").addEventListener("input", () => renderStayInputs(currentStayValues()));

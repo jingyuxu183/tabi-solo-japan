@@ -117,7 +117,7 @@ function memoLocalParse(text, todayIso) {
     if (/^#/.test(line)) return;
     if (/^(?:tips|攻略|交通|必备|冬季必备|注意|提示|备注)\s*[：:]/i.test(line) || /(?:班机|航班|飞往|新干线|直奔)/.test(line)) { notes.push(line); return; }
     // “美食：狸小路「某某鲜鱼店」海鲜丼”：去掉标签；「」里的是店名。
-    line = line.replace(/^(?:路线|美食|美食雷达|吃|住|住宿|景点|打卡|购物)\s*[：:]\s*/, "");
+    line = line.replace(/^(?:路线|美食|美食雷达|吃|住|住宿|景点|打卡|购物|白天|全天)\s*[：:]\s*/, "");
     const quoted = /「([^」]{1,30})」/.exec(line);
     if (quoted && !line.includes("→")) {
       items.push({ name: quoted[1], note: line.replace(quoted[0], " ").replace(/\s+/g, " ").trim().slice(0, 80), dayKey: contextDay, slot: "any", kind: "other", cityHint: contextCity, queryJa: "" });
