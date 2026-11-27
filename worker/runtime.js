@@ -1076,6 +1076,49 @@ function memoCityLevel(item) {
   return { id: item.id, status: "located", precision: "city", localName: "", prefecture, region: regionOfPrefecture(prefecture), city: isPrefecture ? "" : toSimplified(place), area: "", kind: MEMO_KINDS.has(item.kind) ? item.kind : "other", summary: "", chain: false, sources: [], verificationStatus: "text" };
 }
 
+// “其他备忘”：模型负责判断哪些有用、怎么写成一句；代码负责不让它编造。
+// 每条要有出自用户原文的原句；写成的那句话要和原句说的是同一件事（共用的词足够多），数字只能来自原句。
+// 和原句一样或是原句的一部分（用户自己写的“带伞”）直接通过；过不了检查的不要，免得把叙述或编造的话放进来。
+const MEMO_NOTE_KINDS = new Set(["transport", "stay", "booking", "prepare", "shopping", "tip"]);
+
+function memoQuotedFrom(source, text) {
+  const haystack = foldText(text);
+  const clauses = String(source).split(/[。！!？?；;，,\n]+/).map(foldText).filter((clause) => clause.length >= 4);
+  if (!clauses.length) return foldText(source).length >= 2 && haystack.includes(foldText(source));
+  return clauses.filter((clause) => haystack.includes(clause)).length / clauses.length >= 0.5;
+}
+
+function memoNoteGrounded(note, source) {
+  const numbers = String(note).match(/\d+/g) || [];
+  if (numbers.some((number) => !String(source).includes(number))) return false;
+  const fold = (value) => foldText(value).replace(/[^\p{L}\p{N}]/gu, "");
+  const a = fold(note);
+  const b = fold(source);
+  if (a && b.includes(a)) return true;
+  const pairs = new Set();
+  for (let index = 0; index + 1 < a.length; index += 1) pairs.add(a.slice(index, index + 2));
+  const shared = [...pairs].filter((pair) => b.includes(pair)).length;
+  return shared >= 2 && shared / Math.max(1, pairs.size) >= 0.2;
+}
+
+function normalizeMemoNotes(rawNotes, text) {
+  const notes = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(rawNotes) ? rawNotes : []) {
+    // 兼容只给了字符串的回答：当作原句、类型不明。
+    const entry = typeof raw === "string" ? { text: raw, source: raw, kind: "tip" } : raw;
+    const kind = MEMO_NOTE_KINDS.has(entry?.kind) ? entry.kind : "";
+    const source = cleanText(entry?.source, 300);
+    if (!kind || !source || !memoQuotedFrom(source, text)) continue;
+    const value = cleanText(entry?.text, 60);
+    const key = foldText(value);
+    if (!value || !memoNoteGrounded(value, source) || seen.has(key)) continue;
+    seen.add(key);
+    notes.push({ text: value, kind, source });
+  }
+  return notes.slice(0, 20);
+}
+
 function normalizeMemoItems(parsed, text, today) {
   const items = [];
   const seen = new Set();
@@ -1105,7 +1148,7 @@ function normalizeMemoItems(parsed, text, today) {
       queryJa: cleanText(raw?.query_ja, 80),
     });
   }
-  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes: cleanList(parsed?.notes, 20, 120) };
+  return { items: items.slice(0, MEMO_MAX_ITEMS), truncated: items.length > MEMO_MAX_ITEMS, dropped, notes: normalizeMemoNotes(parsed?.notes, text) };
 }
 
 async function collectMemo(request, env) {
@@ -1133,13 +1176,18 @@ async function collectMemo(request, env) {
 - city_hint 是用户写明的城市或地区；城市单独成行（如“京都：”）时适用于后面的各行。没有就留空，不要猜。
 - kind 从 restaurant、cafe、bar、shop、attraction、museum、temple、park、onsen、gym、hotel、area、other 中选。街区、城市、车站一带用 area。
 - query_ja 是用来在日本搜索这个地点的日文搜索词，包含日文名称和城市（如果已知），例如“フグレン トウキョウ 渋谷 カフェ”。
-- 不是地点的事项（买交通卡、换钱、订票提醒等）放进 notes，原样保留。
+- notes 是对这趟旅行有用的“其他备忘”，每条是一个对象 {"text","kind","source"}：
+  - kind 只能是 transport（交通）、stay（住宿）、booking（要预约、买票）、prepare（出发前准备、带什么）、shopping（要买的东西）、tip（注意事项）。
+  - source 是这条备忘依据的原句，从用户文字里逐字摘录，不要改动。
+  - text 是写给旅行者看的一句话，最多 30 个字。用户自己写的待办（如“记得买 Suica”）原样照抄。别人的攻略或游记：交通、住宿安排精简成一句（如“关西机场→京都站：JR Haruka 约80分钟”）；叙述里有可以借鉴的经验时，总结成提醒（如原文写“去机场时遇到南海线人身事故，好在没有其他安排”，text 写“南海线可能因事故延误，去机场留足时间”）。
+  - 只能用 source 里写到的事实：不得补充原文没有的时间、价格、班次、车站名；数字必须原文里有。
+  - 纯粹的叙述、感想、夸赞（如“氛围感绝佳”“完美收官”），以及看完也不知道该做什么的句子，都不要放进 notes。
 - 小红书式的攻略：“Day1 …”“第2天 …”这类小标题下面的地点，date_text 填这个小标题里的“Day1”“第2天”。路线里用“→”连起来的每一站，凡是具体的景点、店、街区、车站，都各算一个地点；括号里的话放进 note。
-- 交通安排（如“札幌→旭川”“JR至美瑛”“晚班机回东京”）、装备、拍摄器材、话题标签（#开头）、帖子标题都不是地点；交通和提醒放进 notes，其余忽略。
+- 交通安排（如“札幌→旭川”“JR至美瑛”“晚班机回东京”）、装备、拍摄器材、话题标签（#开头）、帖子标题都不是地点；有用的交通、装备和提醒按上面的规则放进 notes，其余忽略。
 - 用户没写的地点一个都不要加。
 
 只输出 JSON：
-{"items":[{"name":"Fuglen 咖啡","note":"澳白好喝","date_text":"11/20","slot":"any","city_hint":"","kind":"cafe","query_ja":"フグレン トウキョウ カフェ"}],"notes":["记得买 Suica"]}`;
+{"items":[{"name":"Fuglen 咖啡","note":"澳白好喝","date_text":"11/20","slot":"any","city_hint":"","kind":"cafe","query_ja":"フグレン トウキョウ カフェ"}],"notes":[{"text":"记得买 Suica","kind":"prepare","source":"记得买 Suica"},{"text":"关西机场→京都站：JR Haruka 约80分钟","kind":"transport","source":"从关西机场搭乘 JR Haruka 特急列车直达京都站（约80分钟）"}]}`;
   let result;
   try { result = await callDeepSeekJson(env, { system, user: { memo_text: text }, maxTokens: 4000, temperature: 0.1, label: "DeepSeek memo collector" }); }
   catch (error) {

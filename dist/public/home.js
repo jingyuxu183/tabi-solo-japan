@@ -6,6 +6,7 @@ const STORAGE_KEY = "tabi-memo-v1";
 const LOCATE_BATCH = 6;
 const KIND_LABELS = { restaurant: "餐厅", cafe: "咖啡店", bar: "酒吧", shop: "商店", attraction: "景点", museum: "博物馆", temple: "寺社", park: "公园", onsen: "温泉", gym: "健身房", hotel: "住宿", area: "地区", other: "" };
 const SLOT_LABELS = { morning: "上午", afternoon: "下午", evening: "晚上", any: "" };
+const NOTE_KIND_LABELS = { transport: "交通", stay: "住宿", booking: "预约", prepare: "准备", shopping: "购物", tip: "提醒" };
 // 没写时段的排在下午之后、晚上之前：晚上的安排留在一天的最后更符合阅读习惯。
 const SLOT_ORDER = { morning: 0, afternoon: 1, any: 2, evening: 3 };
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -552,7 +553,8 @@ function render() {
   $("#copy-text").hidden = !total && !state.notes.length;
   $("#clear-all").hidden = !total && !state.notes.length;
   $("#notes-box").hidden = !state.notes.length;
-  $("#notes-list").innerHTML = state.notes.map((note) => `<li><span>${escapeHtml(note.text)}</span><button class="linkish" type="button" data-remove-note="${note.id}">删除</button></li>`).join("");
+  // 分类标签在前；改写过的可以展开看原句，方便核对没有被编造。
+  $("#notes-list").innerHTML = state.notes.map((note) => `<li><div class="note-body">${NOTE_KIND_LABELS[note.kind] ? `<span class="tag">${NOTE_KIND_LABELS[note.kind]}</span>` : ""}<span>${escapeHtml(note.text)}</span>${note.source ? `<details class="note-source"><summary>原文</summary>${escapeHtml(note.source)}</details>` : ""}</div><button class="linkish" type="button" data-remove-note="${note.id}">删除</button></li>`).join("");
 }
 
 function update() { persist(); render(); }
@@ -567,8 +569,11 @@ function addCollected(collected) {
     state.items.push(item);
     added.push(item);
   }
-  for (const text of collected.notes || []) {
-    if (!state.notes.some((note) => note.text === text)) state.notes.push({ id: newId(), text });
+  // 服务器给的是 {text, kind, source}；本地规则兜底给的是一句话。
+  for (const raw of collected.notes || []) {
+    const note = typeof raw === "string" ? { text: raw } : raw;
+    if (!note?.text || state.notes.some((entry) => entry.text === note.text)) continue;
+    state.notes.push({ id: newId(), text: note.text, kind: NOTE_KIND_LABELS[note.kind] ? note.kind : "", source: note.source && foldName(note.source) !== foldName(note.text) ? note.source : "" });
   }
   return { added, duplicates };
 }
@@ -754,7 +759,7 @@ function memoAsText() {
       lines.push(`${item.done ? "✓" : "□"} ${SLOT_LABELS[item.slot] ? `${SLOT_LABELS[item.slot]} ` : ""}${item.name}${where ? `（${where}）` : ""}${item.note ? ` ${item.note}` : ""}`);
     }
   }
-  if (state.notes.length) lines.push("", "其他备忘", ...state.notes.map((note) => `· ${note.text}`));
+  if (state.notes.length) lines.push("", "其他备忘", ...state.notes.map((note) => `· ${NOTE_KIND_LABELS[note.kind] ? `【${NOTE_KIND_LABELS[note.kind]}】` : ""}${note.text}`));
   return lines.join("\n");
 }
 
