@@ -1116,7 +1116,7 @@ async function collectMemo(request, env) {
   try { input = await request.json(); } catch { return json({ error: "请求格式无效" }, 400); }
   const rawText = typeof input?.text === "string" ? input.text.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim() : "";
   // 链接读不到内容，也不是地点：去掉后再拆分，免得模型或规则把它当成一条备忘。
-  const text = memoStripLinks(rawText).trim();
+  const text = memoStripInvisible(memoStripLinks(rawText)).trim();
   if (!text) return json(rawText ? { error: "链接里的内容读不到，请把店名或笔记里的文字贴进来", code: "ONLY_LINKS" } : { error: "先写下想去的地方" }, 400);
   if (text.length > MEMO_MAX_CHARS) return json({ error: `去掉链接后一次最多整理 ${MEMO_MAX_CHARS} 个字，可以分几次贴`, code: "TOO_LONG" }, 400);
   const today = memoParseIso(input?.today) ? input.today : memoIso(new Date());

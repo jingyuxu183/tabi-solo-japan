@@ -487,4 +487,16 @@ test("本地规则：Day 小标题里的城市作为下面各行的城市", () =
   const items = t.memoLocalParse("Day1 札幌漫步\n时计台→大通公园\nDay2 小樽运河一日\n八音盒博物馆→北一硝子", "2026-11-27").items;
   assert.deepEqual(items.map((item) => [item.name, item.cityHint]), [["时计台", "札幌"], ["大通公园", "札幌"], ["八音盒博物馆", "小樽"], ["北一硝子", "小樽"]]);
 });
+test("小红书攻略：小标题前带编号或看不见的字符，照样认出第几天", () => {
+  // 2026-11-27 实测：京都攻略的“- Day 2”前带零宽空格时，只有写在小标题行里的地点有日期。
+  const post = "Day 1: 抵达京都\n先去 锦市场 逛逛\n\n- \u200bDay 2: 东山经典巡礼\n早起前往清水寺\n\n3. Day 3: 岚山\n天龙寺和渡月桥\n\n- Day 4: 伏见稻荷与京都塔\n上午去伏见稻荷大社，下午逛京都塔";
+  const parsed = { items: ["锦市场", "清水寺", "天龙寺", "渡月桥", "伏见稻荷大社", "京都塔"].map((name) => ({ name, date_text: "" })) };
+  const days = Object.fromEntries(t.normalizeMemoItems(parsed, post, "2026-11-27").items.map((item) => [item.name, item.dayKey]));
+  assert.deepEqual(days, { 锦市场: "day-1", 清水寺: "day-2", 天龙寺: "day-3", 渡月桥: "day-3", 伏见稻荷大社: "day-4", 京都塔: "day-4" });
+  assert.equal(t.memoDayHeading("- \u200bDay 2: 东山", "2026-11-27"), "day-2");
+  assert.equal(t.memoDayHeading("3. Day 3: 岚山", "2026-11-27"), "day-3");
+  assert.equal(t.memoDayHeading("11/21 镰仓", "2026-11-27"), "", "普通日期行仍然不算小标题");
+  const local = t.memoLocalParse("- \u200bDay 2: 东山\n清水寺→八坂神社", "2026-11-27").items;
+  assert.deepEqual(local.map((item) => item.dayKey), ["day-2", "day-2"], "本地规则兜底也认");
+});
 console.log(`Backend unit tests passed (${count})`);
