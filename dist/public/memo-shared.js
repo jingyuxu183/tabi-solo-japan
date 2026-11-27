@@ -104,7 +104,7 @@ function memoLocalParse(text, todayIso) {
   const notes = [];
   let contextDay = "";
   let contextCity = "";
-  const lines = memoStripLinks(text).split(/[\n；;]+/);
+  const lines = memoStripInvisible(memoStripLinks(text)).split(/[\n；;]+/);
   // 有“Day1”这种小标题的攻略：第一个小标题之前是帖子标题和开场白，不是地点。
   const firstHeading = lines.findIndex((line) => memoDayHeading(line, todayIso));
   lines.forEach((rawLine, lineIndex) => {
@@ -170,6 +170,11 @@ function memoStripLinks(text) {
   return String(text || "").replace(/\[([^\]\n]{0,80})\]\(\s*https?:\/\/[^)\s]*\s*\)/gi, "$1").replace(/https?:\/\/[^\s，。、；;）)】]+/gi, " ");
 }
 
+// 从网页、AI 聊天界面复制的文字常夹着看不见的格式字符（零宽空格、方向标记等），会让“Day 2”小标题、地点名匹配失败。整理前先去掉。
+function memoStripInvisible(text) {
+  return String(text || "").replace(/\p{Cf}/gu, "");
+}
+
 // 表情符号不是地名的一部分。
 function memoStripEmoji(text) {
   return String(text || "").replace(/[\p{Extended_Pictographic}\uFE0F\u20E3\u200D]/gu, "");
@@ -178,7 +183,8 @@ function memoStripEmoji(text) {
 // “Day1️⃣ 札幌经典Citywalk”“第2天：小樽”这种以“第几天”开头的小标题：它下面的各行都算这一天，直到下一个小标题。
 // 只认行首，免得“11/21 镰仓”这种写在地点旁边的日期被当成小标题。
 function memoDayHeading(line, todayIso) {
-  const text = memoStripEmoji(line).replace(/^[\s\p{P}\p{S}]+/u, "");
+  // 行首不是文字的都跳过：列表符号、编号（“2. Day 2”）、表情、看不见的字符。
+  const text = memoStripInvisible(memoStripEmoji(line)).replace(/^[^\p{L}]+/u, "");
   if (!/^(?:day|d)\s*\d|^第\s*[\d一二两三四五六七八九十]/i.test(text)) return "";
   const day = memoResolveDay(text, todayIso);
   return day.dayKey.startsWith("day-") && text.indexOf(day.matched) === 0 ? day.dayKey : "";
