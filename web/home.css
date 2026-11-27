@@ -237,3 +237,10 @@ fieldset.stays legend { padding: 0; font-size: 13px; color: var(--muted); }
 .item-nearby a { color: #1f5f86; text-underline-offset: 3px; }
 .daymark-chip.is-stay { background: rgba(22, 37, 43, .07); color: var(--muted); }
 .is-today-view [data-nearby] { display: inline-flex; align-items: center; }
+
+/* ---------- 其他备忘：分类标签、可展开的原句 ---------- */
+.note-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.note-source { flex-basis: 100%; font-size: 13px; color: var(--muted); }
+.note-source summary { cursor: pointer; width: fit-content; text-decoration: underline; text-underline-offset: 3px; }
+.note-source[open] summary { margin-bottom: 4px; }
+.notes li > .linkish { flex-shrink: 0; white-space: nowrap; }

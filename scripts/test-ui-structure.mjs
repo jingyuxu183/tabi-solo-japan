@@ -79,4 +79,6 @@ assert.match(homeJs, /data-precise=/, "按城市定位的地点可以再查具�
 assert.match(homeJs, /按你写的城市/, "按城市定位的要说明来历");
 assert.match(homeJs, /#clear-confirm[^\n]*state\.trip = memoNormalizeTrip\(\{\}\)/, "清空时连行程设置一起清掉");
 assert.match(homeJs, /addCollected\(collected\);[\s\S]{0,200}alignToTrip\(\);/, "整理后马上把“第 N 天”换成行程里的日期");
+assert.match(homeJs, /NOTE_KIND_LABELS/, "其他备忘标出类别");
+assert.match(homeJs, /class="note-source"/, "改写过的备忘可以看原句");
 console.log("Memo home page structure is present");

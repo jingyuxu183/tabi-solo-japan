@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const [catalog, shared, runtime] = await Promise.all([readFile(resolve(root, "data/catalog.json"), "utf8"), readFile(resolve(root, "shared/memo.js"), "utf8"), readFile(resolve(root, "worker/runtime.js"), "utf8")]);
-const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights", "memoDayHeading", "MEMO_MAX_ITEMS", "memoFindPlaceIn", "memoCityLevel"];
+const names = ["normalizeGeoName", "regionOfPrefecture", "cityMatches", "targetGeoMatches", "normalizeDiscoveryPlan", "sourceTier", "isReviewSource", "isOfficialSource", "nameGroundedInEvidence", "mustMatchPlace", "collectSearchSources", "requestedCountFromText", "KANJI_MAP", "memoResolveDay", "memoResolveSlot", "memoLocalParse", "normalizeMemoItems", "resolveLocatedItem", "displayPrefecture", "validateLocateInput", "memoNormalizeTrip", "memoTripDays", "memoAlignDayKey", "memoArrangeRules", "memoArrangeScore", "normalizeArrangePlan", "normalizeArrangeItems", "validateArrangeInput", "fillArrangePlan", "memoStripLinks", "memoPrefDistance", "memoStayPrefecture", "memoCityKey", "memoNights", "memoDayHeading", "MEMO_MAX_ITEMS", "memoFindPlaceIn", "memoCityLevel", "normalizeMemoNotes"];
 const dir = await mkdtemp(join(tmpdir(), "tabi-test-"));
 const file = join(dir, "runtime.mjs");
 await writeFile(file, `const ASSETS = {};\nconst CATALOG = ${catalog};\n${shared}\n${runtime}\nexport { ${names.join(", ")} };`);
@@ -498,5 +498,21 @@ test("小红书攻略：小标题前带编号或看不见的字符，照样认�
   assert.equal(t.memoDayHeading("11/21 镰仓", "2026-11-27"), "", "普通日期行仍然不算小标题");
   const local = t.memoLocalParse("- \u200bDay 2: 东山\n清水寺→八坂神社", "2026-11-27").items;
   assert.deepEqual(local.map((item) => item.dayKey), ["day-2", "day-2"], "本地规则兜底也认");
+});
+test("其他备忘：只留有用的；从叙述里总结的提醒必须出自原句，不得编造", () => {
+  const post = "Day 6 大阪\n转到大阪的民宿，方便次日游览神户。傍晚时分，神社亮灯，氛围感绝佳。\n最后一日奔赴大阪关西机场，当然还少不了经典的南海线人身事故，还好当天没有其他安排，最后还是按时抵达机场，还来得及在免税店买买买\n记得带伞";
+  const notes = t.normalizeMemoNotes([
+    { text: "南海线可能因事故延误，去机场留足时间", kind: "tip", source: "最后一日奔赴大阪关西机场，当然还少不了经典的南海线人身事故，还好当天没有其他安排" },
+    { text: "改住大阪的民宿，方便去神户", kind: "stay", source: "转到大阪的民宿，方便次日游览神户。" },
+    { text: "带伞", kind: "prepare", source: "记得带伞" },
+    { text: "神社亮灯很美", kind: "narrative", source: "傍晚时分，神社亮灯，氛围感绝佳。" },
+    { text: "去机场提前2小时出发", kind: "tip", source: "最后一日奔赴大阪关西机场" },
+    { text: "记得带护照", kind: "prepare", source: "氛围感绝佳" },
+    { text: "京都站坐新干线", kind: "transport", source: "从京都站搭乘新干线前往东京" },
+    "冬季必备：冰爪",
+  ], post);
+  assert.deepEqual(notes.map((note) => [note.kind, note.text]), [["tip", "南海线可能因事故延误，去机场留足时间"], ["stay", "改住大阪的民宿，方便去神户"], ["prepare", "带伞"]],
+    "叙述类型不要；数字原文没有的不要；和原句说的不是一件事的不要；原句不在用户文字里的不要");
+  assert.equal(notes[0].source.includes("南海线人身事故"), true, "保留原句，页面上可以看原文");
 });
 console.log(`Backend unit tests passed (${count})`);
