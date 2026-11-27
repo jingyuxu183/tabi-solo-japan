@@ -1,0 +1,32 @@
+# 每个合并请求、以及合并到 main 后，自动跑不联网的测试。
+# 不需要任何密钥，不调用模型和搜索服务，不消耗额度。
+name: 测试
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 界面结构检查 + 后端单元测试 + 部署保护测试（npm test 里会先重新打包 dist/）
+      - run: npm test
+      - run: npm run validate
+      # dist/ 是构建产物，必须和源码一致：改了源码却没重新打包，或者手改了 dist/，这一步会失败。
+      - name: 检查 dist/ 与源码一致
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "dist/ 和源码不一致：请运行 npm run build 并提交 dist/ 的改动。"
+            git diff --stat -- dist
+            exit 1
+          fi

@@ -1,6 +1,6 @@
 # TABI 交接说明（2026-11-17，阶段 4 完成后）
 
-这份说明取代 `TABI_v14_Claude_Handoff.md`。那一份描述的是从 Codex Sites 导出的第 14 版，产品方向和代码都已经变了。
+这份说明描述的是改版后的“旅行备忘”。改版前从 Codex Sites 导出的第 14 版的交接说明（`TABI_v14_Claude_Handoff.md`）已过时，2026-11-27 经 Shao 同意从仓库删除，需要时可在 git 历史里找到。
 
 - 在线版本：https://tabi-memo.shao-tabi.workers.dev （Cloudflare Workers，账号是 Shao 自己的）
 - 代码仓库：https://github.com/jingyuxu183/tabi-solo-japan ，`main` 是最新代码，也是今后的唯一来源
@@ -145,6 +145,8 @@ npm run eval        # 联网发现真实评测，11 个查询，会产生费用
 npm run eval:memo   # 备忘真实评测，5 组输入，会产生费用
 npm run eval:arrange # 编排评测，3 个带标准答案的场景跑 3 轮；没设密钥时只评测规则版
 ```
+
+GitHub Actions（`.github/workflows/test.yml`，2026-11-27 起）在每个合并请求和每次合并到 `main` 后自动跑 `npm test`、`npm run validate`，并检查 `dist/` 与源码一致；结果显示在合并请求页面上。只跑不联网的测试，不需要密钥。
 
 `dev` 和两个 `eval` 从环境变量读取 `DEEPSEEK_API_KEY` 与 `TAVILY_API_KEY`。Windows PowerShell 里先用 `$env:DEEPSEEK_API_KEY="..."` 设置；如果提示禁止运行脚本，用 `npm.cmd run dev`。密钥不要写进仓库。
 
