@@ -75,4 +75,6 @@ assert.match(homeJs, /google\.com\/maps\/search/, "附近跳到谷歌地图搜�
 assert.match(home, /id="source-wrong"/, "依据里可以说位置不对");
 assert.match(homeJs, /fresh: wrong/, "位置不对时跳过缓存重新查");
 assert.match(homeJs, /memoStripLinks\(/, "只贴链接时直接提示");
+assert.match(homeJs, /data-precise=/, "按城市定位的地点可以再查具体位置");
+assert.match(homeJs, /按你写的城市/, "按城市定位的要说明来历");
 console.log("Memo home page structure is present");
