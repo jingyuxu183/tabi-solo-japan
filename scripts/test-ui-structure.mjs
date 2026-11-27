@@ -81,4 +81,7 @@ assert.match(homeJs, /#clear-confirm[^\n]*state\.trip = memoNormalizeTrip\(\{\}\
 assert.match(homeJs, /addCollected\(collected\);[\s\S]{0,200}alignToTrip\(\);/, "整理后马上把“第 N 天”换成行程里的日期");
 assert.match(homeJs, /NOTE_KIND_LABELS/, "其他备忘标出类别");
 assert.match(homeJs, /class="note-source"/, "改写过的备忘可以看原句");
+assert.match(homeJs, /function dayMemosHtml\(/, "挂在某天的备忘显示在那天里");
+assert.match(homeJs, /owner\.tips/, "只和某个地点有关的备忘挂到那个地点");
+assert.match(homeJs, /for \(const note of state\.notes\) if \(note\.dayKey\) note\.dayKey = memoAlignDayKey/, "设了出发日期后，备忘的“第 N 天”也换成日期");
 console.log("Memo home page structure is present");

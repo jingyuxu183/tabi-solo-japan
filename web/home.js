@@ -72,6 +72,12 @@ function tripDays() { return state.trip.days ? memoTripDays(state.trip) : []; }
 function alignToTrip() {
   if (!state.trip.start) return;
   for (const item of state.items) item.dayKey = memoAlignDayKey(state.trip, item.dayKey);
+  for (const note of state.notes) if (note.dayKey) note.dayKey = memoAlignDayKey(state.trip, note.dayKey);
+}
+
+// 一条备忘的显示：类别标签、内容、可展开的原句、删除。挂在某天、某个地点下，或在“其他备忘”里，都用这一个样子。
+function memoNoteHtml(note, removeAttr) {
+  return `${NOTE_KIND_LABELS[note.kind] ? `<span class="tag">${NOTE_KIND_LABELS[note.kind]}</span>` : ""}<span>${escapeHtml(note.text)}</span>${note.source ? `<details class="note-source"><summary>原文</summary>${escapeHtml(note.source)}</details>` : ""}<button class="linkish" type="button" ${removeAttr}>删除</button>`;
 }
 
 // 攻略分的天数和行程设的天数对不上时提醒一句，不替用户改行程。
@@ -222,6 +228,7 @@ function itemHtml(item, options) {
     <div class="item-main">
       <div><span class="item-name">${escapeHtml(item.name)}</span>${item.localName && foldName(item.localName) !== foldName(item.name) ? `<span class="item-local">${escapeHtml(item.localName)}</span>` : ""}</div>
       ${item.note ? `<p class="item-note">${escapeHtml(item.note)}</p>` : ""}
+      ${(item.tips || []).map((tip) => `<p class="item-tip">${memoNoteHtml(tip, `data-remove-tip="${item.id}:${tip.id}"`)}</p>`).join("")}
       <p class="item-where">${whereHtml(item, options)}</p>
       ${state.nearbyId === item.id && canNearby(item) ? `<p class="item-nearby">附近找：${NEARBY.map(([label, word]) => `<a href="${nearbyUrl(item, word)}" target="_blank" rel="noreferrer">${label}</a>`).join("")}<span>在谷歌地图里打开</span></p>` : ""}
     </div>
@@ -243,6 +250,8 @@ function groupByDay() {
   const groups = new Map();
   // 行程里的每一天都列出来，空的也列：这样可以直接把地点拖进还没安排的日子。
   for (const day of tripDays()) groups.set(day.key, []);
+  // 只有备忘、还没有地点的日子（比如“返程”那天只有交通）也要列出来，备忘才有地方显示。
+  for (const note of state.notes) if (note.dayKey && !groups.has(note.dayKey)) groups.set(note.dayKey, []);
   for (const item of state.items) {
     if (!groups.has(item.dayKey || "")) groups.set(item.dayKey || "", []);
     groups.get(item.dayKey || "").push(item);
@@ -283,6 +292,12 @@ function dayNotes(dayKey, items, groups) {
   return notes.join("");
 }
 
+// 挂在这一天的备忘（交通、换住处、当天的提醒），显示在这天的地点列表上方。
+function dayMemosHtml(dayKey) {
+  const memos = dayKey ? state.notes.filter((note) => note.dayKey === dayKey) : [];
+  return memos.length ? `<ul class="day-memos">${memos.map((note) => `<li>${memoNoteHtml(note, `data-remove-note="${note.id}"`)}</li>`).join("")}</ul>` : "";
+}
+
 function renderByDate(onlyKey = null) {
   const groups = groupByDay();
   const html = [...groups.entries()].filter(([dayKey]) => onlyKey === null || dayKey === onlyKey).sort((a, b) => daySortValue(a[0]).localeCompare(daySortValue(b[0]))).map(([dayKey, items]) => {
@@ -296,6 +311,7 @@ function renderByDate(onlyKey = null) {
     return `<section class="group" data-day="${escapeHtml(dayKey)}">
       <header class="daymark ${label.loose ? "is-loose" : ""}">${head}${chips}<span class="daymark-count">${route ? `<a class="route-link" href="${route}" target="_blank" rel="noreferrer">当天路线地图</a>` : ""}${items.length} 处</span></header>
       ${dayNotes(dayKey, items, groups)}
+      ${dayMemosHtml(dayKey)}
       <ul class="group-list">${list}</ul>
     </section>`;
   }).join("");
@@ -552,9 +568,10 @@ function render() {
   document.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === state.view)));
   $("#copy-text").hidden = !total && !state.notes.length;
   $("#clear-all").hidden = !total && !state.notes.length;
-  $("#notes-box").hidden = !state.notes.length;
-  // 分类标签在前；改写过的可以展开看原句，方便核对没有被编造。
-  $("#notes-list").innerHTML = state.notes.map((note) => `<li><div class="note-body">${NOTE_KIND_LABELS[note.kind] ? `<span class="tag">${NOTE_KIND_LABELS[note.kind]}</span>` : ""}<span>${escapeHtml(note.text)}</span>${note.source ? `<details class="note-source"><summary>原文</summary>${escapeHtml(note.source)}</details>` : ""}</div><button class="linkish" type="button" data-remove-note="${note.id}">删除</button></li>`).join("");
+  // 按日期看时，挂到某天的备忘显示在那天里，这里只列没挂上的；按区域看时全部列在这里，并标出是哪一天的。
+  const listed = state.view === "area" ? state.notes : state.notes.filter((note) => !note.dayKey);
+  $("#notes-box").hidden = !listed.length;
+  $("#notes-list").innerHTML = listed.map((note) => { const label = note.dayKey ? dayLabel(note.dayKey) : null; return `<li><div class="note-body">${label ? `<span class="tag is-time">${escapeHtml(label.num ? `${label.num} ${label.week}` : label.text)}</span>` : ""}${memoNoteHtml(note, `data-remove-note="${note.id}"`)}</div></li>`; }).join("");
 }
 
 function update() { persist(); render(); }
@@ -569,11 +586,16 @@ function addCollected(collected) {
     state.items.push(item);
     added.push(item);
   }
-  // 服务器给的是 {text, kind, source}；本地规则兜底给的是一句话。
+  // 服务器给的是 {text, kind, source, place, dayKey}；本地规则兜底给的是一句话。
+  // 只和某个地点有关的挂到那个地点（跟着它拖到别的日子）；有日子的挂到那一天；其余放进“其他备忘”。
   for (const raw of collected.notes || []) {
     const note = typeof raw === "string" ? { text: raw } : raw;
-    if (!note?.text || state.notes.some((entry) => entry.text === note.text)) continue;
-    state.notes.push({ id: newId(), text: note.text, kind: NOTE_KIND_LABELS[note.kind] ? note.kind : "", source: note.source && foldName(note.source) !== foldName(note.text) ? note.source : "" });
+    if (!note?.text) continue;
+    const entry = { id: newId(), text: note.text, kind: NOTE_KIND_LABELS[note.kind] ? note.kind : "", source: note.source && foldName(note.source) !== foldName(note.text) ? note.source : "" };
+    const owner = note.place ? added.find((item) => foldName(item.name) === foldName(note.place)) : null;
+    if (owner) { if (!(owner.tips || []).some((tip) => tip.text === entry.text)) owner.tips = [...(owner.tips || []), entry]; continue; }
+    if (state.notes.some((existing) => existing.text === entry.text)) continue;
+    state.notes.push({ ...entry, dayKey: typeof note.dayKey === "string" ? note.dayKey : "" });
   }
   return { added, duplicates };
 }
@@ -747,19 +769,27 @@ function openSource(id) {
   $("#source-dialog").showModal();
 }
 
+function noteLine(note) { return `${NOTE_KIND_LABELS[note.kind] ? `【${NOTE_KIND_LABELS[note.kind]}】` : ""}${note.text}`; }
+
 function memoAsText() {
   const lines = ["日本旅行备忘"];
   const groups = new Map();
   for (const item of state.items) { if (!groups.has(item.dayKey || "")) groups.set(item.dayKey || "", []); groups.get(item.dayKey || "").push(item); }
+  // 只有备忘、没有地点的日子也要写出来。
+  for (const note of state.notes) if (note.dayKey && !groups.has(note.dayKey)) groups.set(note.dayKey, []);
   for (const [dayKey, items] of [...groups.entries()].sort((a, b) => daySortValue(a[0]).localeCompare(daySortValue(b[0])))) {
     const label = dayLabel(dayKey);
     lines.push("", label.spoken || label.text);
+    // 和页面一样：当天的备忘写在地点前面。
+    for (const note of state.notes.filter((entry) => entry.dayKey && entry.dayKey === dayKey)) lines.push(`  · ${noteLine(note)}`);
     for (const item of items.sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot])) {
       const where = placeText(item);
       lines.push(`${item.done ? "✓" : "□"} ${SLOT_LABELS[item.slot] ? `${SLOT_LABELS[item.slot]} ` : ""}${item.name}${where ? `（${where}）` : ""}${item.note ? ` ${item.note}` : ""}`);
+      for (const tip of item.tips || []) lines.push(`    · ${noteLine(tip)}`);
     }
   }
-  if (state.notes.length) lines.push("", "其他备忘", ...state.notes.map((note) => `· ${NOTE_KIND_LABELS[note.kind] ? `【${NOTE_KIND_LABELS[note.kind]}】` : ""}${note.text}`));
+  const loose = state.notes.filter((note) => !note.dayKey);
+  if (loose.length) lines.push("", "其他备忘", ...loose.map((note) => `· ${noteLine(note)}`));
   return lines.join("\n");
 }
 
@@ -812,7 +842,7 @@ $("#edit-delete").addEventListener("click", () => {
   showToast("已删除");
 });
 document.addEventListener("click", (event) => {
-  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-precise],[data-remove-note],[data-suggest],[data-nearby],[data-close]");
+  const target = event.target.closest("#load-example,[data-view],[data-edit],[data-source],[data-relocate],[data-precise],[data-remove-note],[data-remove-tip],[data-suggest],[data-nearby],[data-close]");
   if (!target) return;
   if (target.id === "load-example") loadExample();
   else if (target.dataset.nearby) { state.nearbyId = state.nearbyId === target.dataset.nearby ? null : target.dataset.nearby; render(); }
@@ -823,6 +853,11 @@ document.addEventListener("click", (event) => {
   else if (target.dataset.relocate) locate([target.dataset.relocate]);
   else if (target.dataset.precise) locate([target.dataset.precise], { precise: true });
   else if (target.dataset.removeNote) { state.notes = state.notes.filter((note) => note.id !== target.dataset.removeNote); update(); }
+  else if (target.dataset.removeTip) {
+    const [itemId, tipId] = target.dataset.removeTip.split(":");
+    const item = state.items.find((entry) => entry.id === itemId);
+    if (item) { item.tips = (item.tips || []).filter((tip) => tip.id !== tipId); update(); }
+  }
   else if (target.hasAttribute("data-close")) target.closest("dialog").close();
 });
 document.addEventListener("change", (event) => {
